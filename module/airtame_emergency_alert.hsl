@@ -1,0 +1,146 @@
+// module/airtame_emergency_alert.hsl
+// Entry script for the "Airtame Emergency Alert" Gira HomeServer logic module.
+// Bound to inputs / parameters / outputs declared in airtame_emergency_alert.xml.
+//
+// Reference implementation (Python) used for unit testing the wire protocol
+// and the input -> output state machine lives in reference/module.py and
+// reference/airtame_payload.py.
+
+#include "lib/util.hsl"
+#include "lib/airtame_payload.hsl"
+#include "lib/airtame_client.hsl"
+
+// --- Inputs --------------------------------------------------------------
+bool   in_trigger         = INPUT[1];
+bool   in_clear           = INPUT[2];
+string in_headline        = INPUT[3];
+string in_description     = INPUT[4];
+string in_template        = INPUT[5];
+bool   in_is_drill        = INPUT[6];
+int    in_duration_s      = INPUT[7];
+
+// --- Parameters ----------------------------------------------------------
+string p_endpoint         = PARAM["api_endpoint"];
+string p_api_key          = PARAM["api_key"];
+string p_id_prefix        = PARAM["alert_id_prefix"];
+string p_def_headline     = PARAM["default_headline"];
+string p_def_description  = PARAM["default_description"];
+string p_def_template     = PARAM["default_template"];
+bool   p_def_is_drill     = PARAM["default_is_drill"];
+int    p_def_duration_s   = PARAM["default_duration_seconds"];
+int    p_timeout_s        = PARAM["timeout_seconds"];
+int    p_max_retries      = PARAM["max_retries"];
+int    p_debounce_ms      = PARAM["debounce_ms"];
+
+// --- Effective values (input overrides param defaults) -------------------
+string headline    = (strlen(in_headline)    > 0) ? in_headline    : p_def_headline;
+string description = (strlen(in_description) > 0) ? in_description : p_def_description;
+string template    = (strlen(in_template)    > 0) ? in_template    : p_def_template;
+bool   is_drill    = (in_is_drill != null) ? in_is_drill    : p_def_is_drill;
+int    duration_s  = (in_duration_s > 0) ? in_duration_s : p_def_duration_s;
+
+// --- Persistent state ---------------------------------------------------
+// Module-level vars are preserved across invocations by the HS runtime.
+//   active_alert_id : id of the currently-open alert (empty when none)
+//   active          : bool, true while an alert is open
+int    counter           = system.getval("airtame_counter", 0);
+string active_alert_id   = system.getval("airtame_active_id", "");
+bool   active            = system.getval("airtame_active", 0) != 0;
+
+// Endpoint must be HTTPS - refuse to send otherwise.
+if (substr(p_endpoint, 0, 8) != "https://") {
+    OUTPUT[1] = active ? 1 : 0;
+    OUTPUT[2] = 0;
+    OUTPUT[3] = 1;
+    OUTPUT[4] = 0;
+    OUTPUT[5] = "config: endpoint must use HTTPS";
+    OUTPUT[6] = active_alert_id;
+    log_error("module", "endpoint must use HTTPS");
+    return;
+}
+if (strlen(p_api_key) == 0) {
+    OUTPUT[1] = active ? 1 : 0;
+    OUTPUT[2] = 0;
+    OUTPUT[3] = 1;
+    OUTPUT[4] = 0;
+    OUTPUT[5] = "config: api_key is required";
+    OUTPUT[6] = active_alert_id;
+    log_error("module", "api_key parameter is empty");
+    return;
+}
+
+// Default pulses to false; we set them only on the firing path.
+bool success_pulse = false;
+bool error_pulse   = false;
+string message     = "";
+
+bool fired_trigger = edge_rising(in_trigger, "trigger", p_debounce_ms);
+bool fired_clear   = edge_rising(in_clear,   "clear",   p_debounce_ms);
+
+if (fired_trigger) {
+    // Build a unique id: <prefix>-<YYYYmmddThhmmssZ>-<counter>
+    counter = counter + 1;
+    system.setval("airtame_counter", counter);
+    string stamp = system.strftime("%Y%m%dT%H%M%SZ", system.time());
+    string alert_id = p_id_prefix + "-" + stamp + "-" + counter;
+
+    string vmsg = validate_alert(alert_id, headline, description, template, duration_s);
+    if (strlen(vmsg) > 0) {
+        error_pulse = true;
+        message = "validation: " + vmsg;
+        log_error("trigger", message);
+        OUTPUT[1] = active ? 1 : 0;
+        OUTPUT[2] = 0;
+        OUTPUT[3] = 1;
+        OUTPUT[4] = 0;
+        OUTPUT[5] = message;
+        OUTPUT[6] = active_alert_id;
+        return;
+    }
+
+    string body = build_trigger_payload(alert_id, headline, description,
+                                        template, is_drill, duration_s);
+    log_info("trigger", "sending alert id=" + alert_id +
+                        " key=" + mask_secret(p_api_key));
+    bool ok = airtame_send(p_endpoint, p_api_key, body, p_timeout_s, p_max_retries);
+
+    if (ok) {
+        active = true;
+        active_alert_id = alert_id;
+        success_pulse = true;
+        message = "alert initiated";
+        system.setval("airtame_active", 1);
+        system.setval("airtame_active_id", active_alert_id);
+    } else {
+        error_pulse = true;
+        message = "HTTP " + airtame_last_status + " (" + airtame_last_error + ")";
+    }
+}
+else if (fired_clear) {
+    if (!active || strlen(active_alert_id) == 0) {
+        // No-op: nothing to clear.
+        log_info("clear", "ignored (no active alert)");
+    } else {
+        string body = build_clear_payload(active_alert_id);
+        log_info("clear", "resolving id=" + active_alert_id);
+        bool ok = airtame_send(p_endpoint, p_api_key, body, p_timeout_s, p_max_retries);
+        if (ok) {
+            active = false;
+            success_pulse = true;
+            message = "alert resolved";
+            system.setval("airtame_active", 0);
+            // Keep active_alert_id as last_alert_id for diagnostics, but flag inactive.
+        } else {
+            error_pulse = true;
+            message = "HTTP " + airtame_last_status + " (" + airtame_last_error + ")";
+        }
+    }
+}
+
+// --- Outputs ------------------------------------------------------------
+OUTPUT[1] = active ? 1 : 0;
+OUTPUT[2] = success_pulse ? 1 : 0;
+OUTPUT[3] = error_pulse ? 1 : 0;
+OUTPUT[4] = airtame_last_status;
+OUTPUT[5] = (strlen(message) > 0) ? message : airtame_last_body;
+OUTPUT[6] = active_alert_id;
