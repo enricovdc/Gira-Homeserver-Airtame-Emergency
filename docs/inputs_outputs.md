@@ -1,8 +1,9 @@
 # Airtame Emergency Alert — Inputs, Outputs, Parameters
 
 This document is the contract between the Gira HomeServer project that
-embeds this module and the module itself. Indexes match the pin numbers
-declared in `module/lbs24815.xml` (LBS number `24815`).
+embeds this module and the module itself. Indexes match the pin order in
+the `PARAMETERS`, `INPUTS`, and `OUTPUTS` lists in
+`gen/generate_lbs24815.py` (LBS number `24815`).
 
 ## Parameters (configured once, at module insert time)
 

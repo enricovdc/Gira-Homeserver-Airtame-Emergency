@@ -1,4 +1,4 @@
-"""End-to-end wiring of inputs -> Airtame client, mirrors module/lbs24815.hsl."""
+"""End-to-end wiring of inputs -> Airtame client, mirrors HSL_BODY in gen/generate_lbs24815.py."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field

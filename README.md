@@ -4,41 +4,46 @@ A Gira HomeServer 4 logic module that triggers and clears
 [Airtame Emergency Alerts](https://help.airtame.com/hc/en-us/articles/28499448688029-Emergency-alerts-integrations-payload-guidelines)
 from KNX / Gira events.
 
-**LBS number:** `24815` (third-party / community range `20000-99999`).
-This is an arbitrary placeholder chosen from the unreserved range. If you plan
-to distribute this module publicly, reserve a number on the community wiki at
-[hs-help.net](https://hs-help.net/) under "LBS-Nummern Vergabe" and then
-rename `module/lbs24815.{xml,hsl}` and update the `id`/`number` fields inside
-the descriptor.
+**LBS number:** `24815` (third-party / community range `20000-99999`). This
+is an arbitrary placeholder. If you plan to distribute this module publicly,
+reserve a number on the community wiki at
+[hs-help.net](https://hs-help.net/) under "LBS-Nummern Vergabe" and update
+`LBS_NUMBER` in `gen/generate_lbs24815.py`.
 
 ## Layout
 
 ```
-module/                  Files deployed to the HomeServer (the actual logic module)
-  lbs24815.xml                  Descriptor: parameters, inputs, outputs (LBS #24815)
-  lbs24815.hsl                  Entry script
-  lib/util.hsl                  JSON escape, base64, ISO 8601, debounce
-  lib/airtame_payload.hsl       Payload builder + validation
-  lib/airtame_client.hsl        HTTPS POST + retries + secret masking
+gen/generate_lbs24815.py    Single source of truth - feed into Gira Experte 4.13's
+                            HSL generator. Top-of-file constants declare the
+                            LBS number, parameters, inputs, outputs; HSL_BODY
+                            holds the function bodies. Running this file
+                            directly emits a fallback .hsl into dist/.
 
-reference/               Python reference implementation (executable spec)
-  airtame_payload.py            Mirrors lib/airtame_payload.hsl
-  airtame_client.py             Mirrors lib/airtame_client.hsl
-  debounce.py                   Mirrors edge_rising() in lib/util.hsl
-  module.py                     Mirrors lbs24815.hsl
+dist/                       Generated artefacts (gitignored). Either Gira's
+                            generator output or the fallback emitted by
+                            gen/generate_lbs24815.py.
 
-tests/                   pytest suite running against the Python reference
-docs/                    inputs/outputs and deployment notes
-examples/                curl scripts for manual smoke tests
+reference/                  Python port of the HSL logic - executable spec
+                            the test suite pins behavior against.
+
+tests/                      pytest suite (31 tests).
+docs/                       Pin contract and deployment notes.
+examples/                   curl scripts for manual smoke tests against
+                            the real Airtame endpoint.
 ```
 
-### Why a Python reference?
+### Why a Python source-of-truth?
 
-HSL only runs on a Gira HomeServer, so its behavior cannot be unit-tested
-in CI directly. The `reference/` package is a line-for-line port of the
-HSL code into Python and serves as the executable spec the test suite
-pins. When the HSL and Python disagree, the HSL is wrong — change it to
-match the tests.
+Gira logic modules are deployed as a single `.hsl` file with a structured
+metadata header that the Gira Experte 4.13 software's bundled HSL generator
+produces. Hand-rolling that header risks subtle parser mismatches between
+Experte versions, so we keep the **inputs** to the generator
+(`gen/generate_lbs24815.py`) in this repo and let Experte produce the
+canonical `.hsl`.
+
+The `reference/` Python package is a separate concern: it's a line-for-line
+port of the HSL function bodies in `HSL_BODY` so we can unit-test the wire
+protocol, validation rules, and state machine without a running HomeServer.
 
 ## What it does
 
@@ -51,10 +56,34 @@ match the tests.
 * Validates required fields before any HTTP call.
 * Masks the API key in trace logs.
 * Exposes `active`, `success_pulse`, `error_pulse`, `last_status_code`,
-  `last_message`, and `last_alert_id` as outputs.
+  `last_message`, `last_alert_id` as outputs.
 
 See `docs/inputs_outputs.md` for the full pin contract and
 `docs/deployment.md` for installation steps.
+
+## Generating the .hsl
+
+### Preferred: through Gira Experte 4.13
+
+1. Locate the HSL generator script bundled with Experte 4.13 (typically a
+   `.py` file under the Experte install directory).
+2. Feed `gen/generate_lbs24815.py` to it. The module metadata constants
+   (`LBS_NUMBER`, `LBS_NAME`, `PARAMETERS`, `INPUTS`, `OUTPUTS`, `HSL_BODY`)
+   are laid out so the generator can consume them.
+3. If the generator expects a different schema, rename the top-level
+   constants in `gen/generate_lbs24815.py` to match - the values stay the same.
+4. The generator writes a canonical `dist/lbs24815.hsl` that Experte can
+   import as a logic module.
+
+### Fallback: run the source file directly
+
+```
+python3 gen/generate_lbs24815.py
+# writes dist/lbs24815.hsl with a best-effort header.
+```
+
+Use this only when the Gira generator is unavailable. Prefer Gira's output
+in production.
 
 ## Running tests
 
@@ -74,6 +103,9 @@ The suite covers:
 * End-to-end module behavior: trigger fires once on held-high input,
   clear sends Resolve with the matching id, validation surfaces to outputs,
   auth/timeout errors surface to outputs (`tests/test_module.py`)
+
+When you change `HSL_BODY` in `gen/generate_lbs24815.py`, update the
+matching function in `reference/` and re-run tests.
 
 ## Manual verification checklist
 
@@ -100,21 +132,22 @@ Once installed on a Gira HomeServer:
 
 ## Security notes
 
-* The API key is declared `type="password"` in the descriptor; the HS
-  password store should keep it out of plaintext exports.
-* `module/lib/util.hsl` `mask_secret()` is called before any trace log
-  line that mentions the key. `tests/test_client.py::test_mask_secret_*`
-  pins this behavior.
-* `module/lib/airtame_client.hsl` and the Python reference both reject
-  non-HTTPS endpoints in `__post_init__` / a guard at the top of the
-  entry script.
-* `.gitignore` blocks `.env`, `secrets.local.*`, and built `.hslz`
+* The API key is declared as a `password` parameter, so Experte stores it in
+  the HS password store rather than as plaintext in the project file.
+* `mask_secret()` (in `HSL_BODY`) is called before any trace log line that
+  mentions the key. `tests/test_client.py::test_mask_secret_*` pins this
+  behavior.
+* The body refuses to send when the endpoint isn't `https://` or the key is
+  empty - both surface as an `error_pulse` with `last_message` starting with
+  `config: …`.
+* `.gitignore` blocks `dist/`, `.env`, `secrets.local.*`, and built `.hslz`
   archives from being committed.
 
 ## Limitations / out of scope
 
 * Only the Emergency Alerts endpoint is implemented. Device management,
   fleet config, screen layout, etc. are not handled here.
-* The HSL HTTP layer assumes `hsl.net.HTTPClient` is available (Gira HS
-  4.x). Older firmwares need the small change documented at the bottom
-  of `docs/deployment.md`.
+* `HSL_BODY` uses `hsl.net.HTTPClient` for HTTPS. If your Experte 4.13 /
+  HomeServer firmware exposes a different HTTP helper, edit only the
+  `airtame_send` function in `HSL_BODY` - the rest of the module is
+  HTTP-API-agnostic and the wire format is locked by `tests/test_client.py`.
