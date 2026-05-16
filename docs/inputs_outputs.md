@@ -2,7 +2,7 @@
 
 This document is the contract between the Gira HomeServer project that
 embeds this module and the module itself. Indexes match the pin numbers
-declared in `module/airtame_emergency_alert.xml`.
+declared in `module/lbs24815.xml` (LBS number `24815`).
 
 ## Parameters (configured once, at module insert time)
 

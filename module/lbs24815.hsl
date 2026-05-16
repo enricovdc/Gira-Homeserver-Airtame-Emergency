@@ -1,6 +1,7 @@
-// module/airtame_emergency_alert.hsl
+// module/lbs24815.hsl
 // Entry script for the "Airtame Emergency Alert" Gira HomeServer logic module.
-// Bound to inputs / parameters / outputs declared in airtame_emergency_alert.xml.
+// LBS number: 24815 (community third-party range; placeholder - see README).
+// Bound to inputs / parameters / outputs declared in lbs24815.xml.
 //
 // Reference implementation (Python) used for unit testing the wire protocol
 // and the input -> output state machine lives in reference/module.py and

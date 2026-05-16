@@ -11,8 +11,8 @@
 The deployable artifact is the contents of `module/`:
 
 ```
-module/airtame_emergency_alert.xml      # descriptor
-module/airtame_emergency_alert.hsl      # entry script
+module/lbs24815.xml                     # descriptor (LBS #24815)
+module/lbs24815.hsl                     # entry script
 module/lib/util.hsl
 module/lib/airtame_payload.hsl
 module/lib/airtame_client.hsl
@@ -21,6 +21,17 @@ module/lib/airtame_client.hsl
 Import these files into the Gira Project Assistant / Expert tool as a new
 logic module ("Logikbaustein"). The descriptor file is the entry; the `.hsl`
 files must be installed alongside it so the `#include` directives resolve.
+
+### About the LBS number
+
+`24815` is the module's globally-unique numeric identifier inside an Experten
+project. It is encoded both in the file name (`lbs24815.{xml,hsl}`) and in
+the `<logicmodule id="24815">` / `<number>24815</number>` fields of the
+descriptor. Experten uses this number to bind module instances back to their
+script. To avoid collisions with other third-party modules in the same
+project, replace `24815` with a number reserved for you on
+[hs-help.net](https://hs-help.net/) before publishing. The replacement is a
+single global find/replace in the `module/` and `docs/` trees.
 
 ## 3. Configure the module instance
 

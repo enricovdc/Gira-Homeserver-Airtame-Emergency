@@ -5,18 +5,24 @@
   Inputs, parameters, and outputs documented in docs/inputs_outputs.md.
   Wire protocol mirrors reference/airtame_payload.py (unit-tested).
 -->
-<logicmodule version="1.0">
+<logicmodule id="24815" version="1.0">
     <metadata>
+        <number>24815</number>
         <name>Airtame Emergency Alert</name>
-        <id>com.example.gira.airtame.emergency_alert</id>
+        <reverse_dns_id>com.example.gira.airtame.emergency_alert</reverse_dns_id>
         <version>0.1.0</version>
         <vendor>Internal</vendor>
         <description>
             Triggers and clears Airtame Emergency Alerts via the Airtame Cloud
             public emergency-alerts API. Use this module to display emergency
             signage on Airtame screens in response to KNX/Gira events.
+
+            LBS number 24815 is a placeholder in the community third-party
+            range (20000-99999). If you intend to publish this module, reserve
+            a number on the hs-help.net "LBS-Nummern Vergabe" wiki and rename
+            lbs24815.* + this id/number field accordingly.
         </description>
-        <script>airtame_emergency_alert.hsl</script>
+        <script>lbs24815.hsl</script>
     </metadata>
 
     <parameters>

@@ -4,12 +4,19 @@ A Gira HomeServer 4 logic module that triggers and clears
 [Airtame Emergency Alerts](https://help.airtame.com/hc/en-us/articles/28499448688029-Emergency-alerts-integrations-payload-guidelines)
 from KNX / Gira events.
 
+**LBS number:** `24815` (third-party / community range `20000-99999`).
+This is an arbitrary placeholder chosen from the unreserved range. If you plan
+to distribute this module publicly, reserve a number on the community wiki at
+[hs-help.net](https://hs-help.net/) under "LBS-Nummern Vergabe" and then
+rename `module/lbs24815.{xml,hsl}` and update the `id`/`number` fields inside
+the descriptor.
+
 ## Layout
 
 ```
 module/                  Files deployed to the HomeServer (the actual logic module)
-  airtame_emergency_alert.xml   Descriptor: parameters, inputs, outputs
-  airtame_emergency_alert.hsl   Entry script
+  lbs24815.xml                  Descriptor: parameters, inputs, outputs (LBS #24815)
+  lbs24815.hsl                  Entry script
   lib/util.hsl                  JSON escape, base64, ISO 8601, debounce
   lib/airtame_payload.hsl       Payload builder + validation
   lib/airtame_client.hsl        HTTPS POST + retries + secret masking
@@ -18,7 +25,7 @@ reference/               Python reference implementation (executable spec)
   airtame_payload.py            Mirrors lib/airtame_payload.hsl
   airtame_client.py             Mirrors lib/airtame_client.hsl
   debounce.py                   Mirrors edge_rising() in lib/util.hsl
-  module.py                     Mirrors airtame_emergency_alert.hsl
+  module.py                     Mirrors lbs24815.hsl
 
 tests/                   pytest suite running against the Python reference
 docs/                    inputs/outputs and deployment notes
