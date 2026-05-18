@@ -27,13 +27,40 @@ class _Debug:
 
 
 class _Container:
-    """Backs inputs / store / timer with a dict and a changed-set."""
+    """Backs inputs / store / timer with a dict and a changed-set.
+
+    On at least one real HomeServer firmware the framework exposes each
+    input/store under MULTIPLE keys: numeric index (1-based, in
+    declaration order), UPPERCASE const-name string, AND (per the SDK
+    example) the lowercase identifier. This stub mirrors that so module
+    code that probes inputs.keys() and picks any of the three forms
+    works against the stub and against the real firmware identically.
+    """
     def __init__(self, values=None):
-        self._values = dict(values or {})
-        self._changed = set(self._values.keys())
+        values = dict(values or {})
+        # logical name -> tuple of (lower, upper, idx) keys it's registered under
+        self._aliases = {}
+        self._values = {}
+        self._changed = set()
+        for i, (name, value) in enumerate(values.items(), start=1):
+            self._register(name, i, value, mark_changed=True)
+
+    def _register(self, name, idx, value, mark_changed):
+        aliases = (name, name.upper(), idx) if isinstance(name, str) else (name,)
+        self._aliases[name] = aliases
+        for k in aliases:
+            self._values[k] = value
+            if mark_changed:
+                self._changed.add(k)
 
     def keys(self):
-        return list(self._values.keys())
+        # Preserve declaration order for numeric keys, then string aliases.
+        ordered = []
+        for aliases in self._aliases.values():
+            for k in aliases:
+                if k not in ordered:
+                    ordered.append(k)
+        return ordered
 
     def value(self, name):
         return self._values.get(name)
@@ -41,13 +68,18 @@ class _Container:
     def changed(self, name):
         return name in self._changed
 
-    # test helpers - not part of the SDK surface
+    # ---- test helpers - not part of the SDK surface ----
     def _set(self, name, value, mark_changed=True):
-        self._values[name] = value
-        if mark_changed:
-            self._changed.add(name)
-        else:
-            self._changed.discard(name)
+        if name not in self._aliases:
+            idx = len(self._aliases) + 1
+            self._register(name, idx, value, mark_changed=mark_changed)
+            return
+        for k in self._aliases[name]:
+            self._values[k] = value
+            if mark_changed:
+                self._changed.add(k)
+            else:
+                self._changed.discard(k)
 
     def _clear_changed(self):
         self._changed.clear()

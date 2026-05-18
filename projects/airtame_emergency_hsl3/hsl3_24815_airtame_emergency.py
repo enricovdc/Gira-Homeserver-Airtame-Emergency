@@ -125,11 +125,39 @@ def build_cap_cancel(cancel_id, sender_id, cancel_sent_iso, original_id,
 
 
 class LogicModule:
+    # Logical names in declaration order from config_airtame_emergency.json.
+    # The actual framework key for each name (lowercase string, UPPERCASE
+    # string, or numeric index) is resolved once in on_init via
+    # _resolve_keys, because different HomeServer firmwares expose
+    # different forms. The user-facing log on at least one firmware
+    # showed only numeric and UPPERCASE keys; lowercase lookups silently
+    # returned None, so on_calc never fired the trigger handler.
+    INPUT_NAMES = (
+        "trigger", "clear", "headline", "description", "template",
+        "is_drill", "duration_seconds", "api_endpoint", "api_key",
+        "alert_id_prefix", "timeout_seconds", "max_retries", "debounce_ms",
+        "payload_format", "sender_id", "cap_category",
+    )
+    STORE_NAMES = (
+        "active", "active_alert_id", "counter",
+        "last_trig_val", "last_trig_ts_ms",
+        "last_clr_val", "last_clr_ts_ms",
+        "active_sent_ts",
+    )
+    OUTPUT_NAMES = (
+        "active", "success_pulse", "error_pulse",
+        "last_status_code", "last_message", "last_alert_id",
+    )
+
     def __init__(self, hsl3):
         self.fw = hsl3
         self.debug = self.fw.create_debug_section()
-        # Cached snapshot of the latest inputs - read fresh on each on_calc.
+        # Cached snapshot of the latest inputs, keyed by lowercase logical name.
         self._snap = {}
+        # Logical-name -> actual framework key, filled in on_init.
+        self._in_key = {n: n for n in self.INPUT_NAMES}
+        self._st_key = {n: n for n in self.STORE_NAMES}
+        self._out_key = {n: n for n in self.OUTPUT_NAMES}
         # Edge-detect / debounce state, restored from `store` in on_init.
         self._last_trig_val = 0
         self._last_trig_ts_ms = 0
@@ -143,21 +171,83 @@ class LogicModule:
         # HTTP transport seam - tests monkeypatch this; default uses requests.
         self._send_http = self._send_http_real
 
+    # ---- key resolution --------------------------------------------------
+
+    def _resolve_keys(self, inputs, store):
+        """Probe the containers' keys() and pick the form that exists for
+        each logical name. Different HS firmwares expose different forms
+        (lowercase as in the SDK example, UPPERCASE matching the const_name
+        convention from HSL2, or numeric pin indices)."""
+        in_keys = list(inputs.keys()) if inputs is not None else []
+        st_keys = list(store.keys()) if store is not None else []
+        for i, name in enumerate(self.INPUT_NAMES, start=1):
+            self._in_key[name] = self._pick(in_keys, name, i)
+        for i, name in enumerate(self.STORE_NAMES, start=1):
+            self._st_key[name] = self._pick(st_keys, name, i)
+        # Outputs have no keys() to probe. Mirror the form used by inputs.
+        out_form = self._form_of(in_keys)
+        for i, name in enumerate(self.OUTPUT_NAMES, start=1):
+            if out_form == "upper":
+                self._out_key[name] = name.upper()
+            elif out_form == "numeric":
+                self._out_key[name] = i
+            else:
+                self._out_key[name] = name
+
+    @staticmethod
+    def _pick(available_keys, name, idx):
+        # Preference order: lowercase name, UPPERCASE name, numeric index.
+        for cand in (name, name.upper(), idx):
+            if cand in available_keys:
+                return cand
+        return name  # fallback; lookups will return None
+
+    @staticmethod
+    def _form_of(keys):
+        has_lower = any(isinstance(k, str) and k == k.lower() and k != k.upper()
+                        for k in keys)
+        if has_lower:
+            return "lower"
+        has_upper = any(isinstance(k, str) and k.isupper() for k in keys)
+        if has_upper:
+            return "upper"
+        return "numeric"
+
+    # ---- low-level container helpers ------------------------------------
+
+    def _iv(self, inputs, name):
+        return inputs.value(self._in_key[name])
+
+    def _ic(self, inputs, name):
+        return inputs.changed(self._in_key[name])
+
+    def _sv(self, store, name):
+        return store.value(self._st_key[name])
+
+    def _set_output(self, name, value):
+        self.fw.set_output(self._out_key[name], value)
+
+    def _set_store(self, name, value):
+        self.fw.set_store(self._st_key[name], value)
+
     # ---- HSL3 lifecycle hooks --------------------------------------------
 
     def on_init(self, inputs, store):
-        self.debug.log("on_init keys=%s store_keys=%s"
-                       % (list(inputs.keys()), list(store.keys())))
+        self._resolve_keys(inputs, store)
+        self.debug.log("on_init keys=%s store_keys=%s resolved_in_trigger=%r resolved_st_active=%r"
+                       % (list(inputs.keys()), list(store.keys()),
+                          self._in_key.get("trigger"),
+                          self._st_key.get("active")))
         self._snap_from(inputs)
         try:
-            self._active = bool(int(store.value("active") or 0))
-            self._active_alert_id = store.value("active_alert_id") or ""
-            self._active_sent_ts = store.value("active_sent_ts") or ""
-            self._counter = int(store.value("counter") or 0)
-            self._last_trig_val = int(store.value("last_trig_val") or 0)
-            self._last_trig_ts_ms = int(store.value("last_trig_ts_ms") or 0)
-            self._last_clr_val = int(store.value("last_clr_val") or 0)
-            self._last_clr_ts_ms = int(store.value("last_clr_ts_ms") or 0)
+            self._active = bool(int(self._sv(store, "active") or 0))
+            self._active_alert_id = self._sv(store, "active_alert_id") or ""
+            self._active_sent_ts = self._sv(store, "active_sent_ts") or ""
+            self._counter = int(self._sv(store, "counter") or 0)
+            self._last_trig_val = int(self._sv(store, "last_trig_val") or 0)
+            self._last_trig_ts_ms = int(self._sv(store, "last_trig_ts_ms") or 0)
+            self._last_clr_val = int(self._sv(store, "last_clr_val") or 0)
+            self._last_clr_ts_ms = int(self._sv(store, "last_clr_ts_ms") or 0)
         except Exception as e:
             self.debug.log("store restore failed: %s" % e)
         # Restore the user-visible outputs to match the persisted state.
@@ -166,11 +256,11 @@ class LogicModule:
 
     def on_calc(self, inputs):
         self._snap_from(inputs)
-        if inputs.changed("trigger"):
+        if self._ic(inputs, "trigger"):
             if self._rising_edge(int(self._snap.get("trigger") or 0),
                                  attr="trig"):
                 self._handle_trigger()
-        if inputs.changed("clear"):
+        if self._ic(inputs, "clear"):
             if self._rising_edge(int(self._snap.get("clear") or 0),
                                  attr="clr"):
                 self._handle_clear()
@@ -181,8 +271,14 @@ class LogicModule:
     # ---- snapshot helpers ------------------------------------------------
 
     def _snap_from(self, inputs):
-        for k in inputs.keys():
-            self._snap[k] = inputs.value(k)
+        # Key the snapshot by lowercase logical name (canonical inside the
+        # module), pulling values via the resolved-form keys.
+        self._snap = {}
+        for name in self.INPUT_NAMES:
+            try:
+                self._snap[name] = inputs.value(self._in_key[name])
+            except Exception:
+                self._snap[name] = None
 
     def _cfg(self, key, default):
         v = self._snap.get(key)
@@ -453,26 +549,26 @@ class LogicModule:
 
     def _emit_outputs(self, active, success_pulse, error_pulse,
                       status_code, message, alert_id):
-        self.fw.set_output("active", float(active))
-        self.fw.set_output("success_pulse", float(success_pulse))
-        self.fw.set_output("error_pulse", float(error_pulse))
-        self.fw.set_output("last_status_code", float(status_code))
-        self.fw.set_output("last_message", _enc(message))
-        self.fw.set_output("last_alert_id", _enc(alert_id))
+        self._set_output("active", float(active))
+        self._set_output("success_pulse", float(success_pulse))
+        self._set_output("error_pulse", float(error_pulse))
+        self._set_output("last_status_code", float(status_code))
+        self._set_output("last_message", _enc(message))
+        self._set_output("last_alert_id", _enc(alert_id))
 
     def _set_output_single(self, identifier, value):
         # HSL3 spec: string outputs are bytes (iso-8859-15); numbers are floats.
         if isinstance(value, str):
-            self.fw.set_output(identifier, _enc(value))
+            self._set_output(identifier, _enc(value))
         else:
-            self.fw.set_output(identifier, float(value))
+            self._set_output(identifier, float(value))
 
     def _persist_store(self, identifier, value):
-        self.fw.set_store(identifier, value if isinstance(value, str) else float(value))
+        self._set_store(identifier, value if isinstance(value, str) else float(value))
 
     def _persist_active(self, active, alert_id):
-        self.fw.set_store("active", float(active))
-        self.fw.set_store("active_alert_id", alert_id)
+        self._set_store("active", float(active))
+        self._set_store("active_alert_id", alert_id)
 
 
 def _enc(s):
