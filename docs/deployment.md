@@ -1,5 +1,17 @@
 # Deployment
 
+This repo ships two parallel implementations of the same module:
+
+* **HSL2** under `projects/airtame_emergency/` — for HomeServer firmware
+  using the `hsl20_4` framework (Python 2.7 inside the deployed `.hsl`).
+* **HSL3** under `projects/airtame_emergency_hsl3/` — for HomeServer
+  firmware supporting HSL3 SDK 3.0 (Python 3.9, `LogicModule`,
+  JSON config, `requests`).
+
+Pick whichever matches the firmware on your HomeServer. If you're not
+sure which the firmware supports, check the Experte 4.13 install for
+`HSL/HSL3 SDK 3.0/` — if it's there, HSL3 is available.
+
 ## 1. Get an Airtame API key
 
 1. Log in to Airtame Cloud as an organization admin.

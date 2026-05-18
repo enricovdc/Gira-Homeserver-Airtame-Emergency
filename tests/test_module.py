@@ -39,14 +39,14 @@ class FakeHTTP(object):
 
 def _build(responses):
     inst = airtame_module.AirtameEmergencyAlert24815(homeserver_context=object())
-    inst.FRAMEWORK.inputs.update(VALID_INPUT_DEFAULTS)
+    inst._input_values.update(VALID_INPUT_DEFAULTS)
     inst._http_post = FakeHTTP(responses)
     inst.on_init()  # establish output defaults like the real HS does
     return inst
 
 
 def _fire(inst, index, value):
-    inst.FRAMEWORK.inputs[index] = value
+    inst._input_values[index] = value
     inst.on_input_value(index, value)
 
 
@@ -57,21 +57,21 @@ def test_rising_trigger_sends_initiated_and_sets_outputs(monkeypatch):
     _fire(inst, inst.PIN_I_TRIGGER, 0)  # baseline
     _fire(inst, inst.PIN_I_TRIGGER, 1)  # rising edge
 
-    fw = inst.FRAMEWORK
-    assert fw.outputs[inst.PIN_O_ACTIVE] == 1
-    assert fw.outputs[inst.PIN_O_LAST_STATUS_CODE] == 200
-    assert fw.outputs[inst.PIN_O_LAST_MESSAGE] == "alert initiated"
-    assert fw.outputs[inst.PIN_O_LAST_ALERT_ID].startswith("gira-hs-")
-    assert fw.remanent[inst.REM_ACTIVE] == 1
+    fw = inst
+    assert fw._output_values[inst.PIN_O_ACTIVE] == 1
+    assert fw._output_values[inst.PIN_O_LAST_STATUS_CODE] == 200
+    assert fw._output_values[inst.PIN_O_LAST_MESSAGE] == "alert initiated"
+    assert fw._output_values[inst.PIN_O_LAST_ALERT_ID].startswith("gira-hs-")
+    assert fw._remanent_values[inst.REM_ACTIVE] == 1
     # success_pulse was set high then low (pulse)
-    pulse_writes = [v for (p, v) in fw.output_history if p == inst.PIN_O_SUCCESS_PULSE]
+    pulse_writes = [v for (p, v) in fw._output_history if p == inst.PIN_O_SUCCESS_PULSE]
     assert pulse_writes[-2:] == [1, 0]
 
     sent = inst._http_post.calls[0]["body"]
     assert sent["status"] == "Initiated"
     assert sent["headline"] == "Emergency"
     assert sent["template"] == "high"
-    assert sent["id"] == fw.outputs[inst.PIN_O_LAST_ALERT_ID]
+    assert sent["id"] == fw._output_values[inst.PIN_O_LAST_ALERT_ID]
 
 
 def test_held_high_trigger_only_fires_once(monkeypatch):
@@ -91,13 +91,13 @@ def test_clear_after_trigger_sends_resolved_with_same_id(monkeypatch):
 
     _fire(inst, inst.PIN_I_TRIGGER, 0)
     _fire(inst, inst.PIN_I_TRIGGER, 1)
-    alert_id = inst.FRAMEWORK.outputs[inst.PIN_O_LAST_ALERT_ID]
+    alert_id = inst._output_values[inst.PIN_O_LAST_ALERT_ID]
 
     _fire(inst, inst.PIN_I_CLEAR, 0)
     _fire(inst, inst.PIN_I_CLEAR, 1)
 
-    assert inst.FRAMEWORK.outputs[inst.PIN_O_ACTIVE] == 0
-    assert inst.FRAMEWORK.outputs[inst.PIN_O_LAST_MESSAGE] == "alert resolved"
+    assert inst._output_values[inst.PIN_O_ACTIVE] == 0
+    assert inst._output_values[inst.PIN_O_LAST_MESSAGE] == "alert resolved"
     assert inst._http_post.calls[1]["body"] == {"id": alert_id, "status": "Resolved"}
 
 
@@ -114,12 +114,12 @@ def test_validation_failure_does_not_call_http(monkeypatch):
     inst = _build([])
     # Force a headline that overruns MAX_HEADLINE_LEN so validation fires
     # (the bare empty case falls back to "Emergency" via _config's default).
-    inst.FRAMEWORK.inputs[inst.PIN_I_HEADLINE] = "x" * 201
+    inst._input_values[inst.PIN_I_HEADLINE] = "x" * 201
 
     _fire(inst, inst.PIN_I_TRIGGER, 1)
 
     assert inst._http_post.calls == []
-    msg = inst.FRAMEWORK.outputs[inst.PIN_O_LAST_MESSAGE]
+    msg = inst._output_values[inst.PIN_O_LAST_MESSAGE]
     assert "validation" in msg
     assert "headline exceeds" in msg
 
@@ -129,10 +129,10 @@ def test_auth_error_surfaces_to_outputs(monkeypatch):
     inst = _build([(401, "bad token")])
     _fire(inst, inst.PIN_I_TRIGGER, 1)
 
-    fw = inst.FRAMEWORK
-    assert fw.outputs[inst.PIN_O_LAST_STATUS_CODE] == 401
-    assert "auth" in fw.outputs[inst.PIN_O_LAST_MESSAGE].lower()
-    assert fw.outputs[inst.PIN_O_ACTIVE] == 0
+    fw = inst
+    assert fw._output_values[inst.PIN_O_LAST_STATUS_CODE] == 401
+    assert "auth" in fw._output_values[inst.PIN_O_LAST_MESSAGE].lower()
+    assert fw._output_values[inst.PIN_O_ACTIVE] == 0
 
 
 def test_timeout_surfaces_to_outputs(monkeypatch):
@@ -141,9 +141,9 @@ def test_timeout_surfaces_to_outputs(monkeypatch):
     inst = _build([err, err, err])
     _fire(inst, inst.PIN_I_TRIGGER, 1)
 
-    fw = inst.FRAMEWORK
-    assert fw.outputs[inst.PIN_O_LAST_STATUS_CODE] == 0
-    assert "timeout" in fw.outputs[inst.PIN_O_LAST_MESSAGE].lower()
+    fw = inst
+    assert fw._output_values[inst.PIN_O_LAST_STATUS_CODE] == 0
+    assert "timeout" in fw._output_values[inst.PIN_O_LAST_MESSAGE].lower()
 
 
 def test_secret_is_masked_in_logger(monkeypatch):
@@ -158,16 +158,16 @@ def test_secret_is_masked_in_logger(monkeypatch):
 def test_non_https_endpoint_surfaces_config_error(monkeypatch):
     monkeypatch.setattr(airtame_module.time, "sleep", lambda _: None)
     inst = _build([])
-    inst.FRAMEWORK.inputs[inst.PIN_I_API_ENDPOINT] = "http://airtame.cloud/x"
+    inst._input_values[inst.PIN_I_API_ENDPOINT] = "http://airtame.cloud/x"
     _fire(inst, inst.PIN_I_TRIGGER, 1)
     assert inst._http_post.calls == []
-    assert "config" in inst.FRAMEWORK.outputs[inst.PIN_O_LAST_MESSAGE]
+    assert "config" in inst._output_values[inst.PIN_O_LAST_MESSAGE]
 
 
 def test_on_init_restores_active_from_remanent(monkeypatch):
     inst = _build([])
-    inst.FRAMEWORK.remanent[inst.REM_ACTIVE] = 1
-    inst.FRAMEWORK.remanent[inst.REM_ACTIVE_ALERT_ID] = "prev-alert-7"
+    inst._remanent_values[inst.REM_ACTIVE] = 1
+    inst._remanent_values[inst.REM_ACTIVE_ALERT_ID] = "prev-alert-7"
     inst.on_init()
-    assert inst.FRAMEWORK.outputs[inst.PIN_O_ACTIVE] == 1
-    assert inst.FRAMEWORK.outputs[inst.PIN_O_LAST_ALERT_ID] == "prev-alert-7"
+    assert inst._output_values[inst.PIN_O_ACTIVE] == 1
+    assert inst._output_values[inst.PIN_O_LAST_ALERT_ID] == "prev-alert-7"

@@ -4,28 +4,43 @@ A Gira HomeServer logic module that triggers and clears
 [Airtame Emergency Alerts](https://help.airtame.com/hc/en-us/articles/28499448688029-Emergency-alerts-integrations-payload-guidelines)
 from KNX / Gira events.
 
-Built against the **Gira HSL2 SDK 2.0.7** (`hsl20_4` framework, Python 2.7).
+Two parallel implementations are shipped, one per SDK generation:
 
-**LBS number:** `24815` (community third-party range `20000-99999`). This
-is an arbitrary placeholder. If you publish the module, reserve a number
-on [hs-help.net](https://hs-help.net/) under "LBS-Nummern Vergabe" and
-update `id="..."` in `config.xml`, the file name `24815_*.py`, and the
+* **HSL2 SDK 2.0.7** (`hsl20_4` framework, Python 2.7, `.py` subclass of
+  `hsl20_4.BaseModule`, XML config). Pick this if your HS firmware runs
+  the HSL2 framework.
+* **HSL3 SDK 3.0** (Python 3.9, plain `LogicModule` class with a
+  framework object injected into `__init__`, JSON config). Pick this if
+  your HS firmware supports HSL3. Uses `requests` and explicit
+  `threading.Thread` for HTTP, which is the canonical HSL3 pattern.
+
+Both implementations produce identical Airtame wire payloads; the
+algorithmic behavior is the same.
+
+**LBS number:** `24815` (community third-party range `20000-99999`).
+Placeholder — if publishing, reserve one on
+[hs-help.net](https://hs-help.net/) under "LBS-Nummern Vergabe" and
+update the id in `config.xml`/`config_*.json`, the file names, and the
 class name `AirtameEmergencyAlert24815`.
 
 ## Layout
 
 ```
-projects/airtame_emergency/
-  config.xml                                    Module metadata: pins, remanent vars, translations
-  src/24815_AirtameEmergencyAlert.py            Python class (the developer-written source)
-  release/                                      Generator output (.hsl files, gitignored)
-  debug/                                        Generator output (.py files for simulation, gitignored)
+projects/airtame_emergency/                     -- HSL2 project (SDK 2.0.7)
+  config.xml                                       inputs / outputs / remanent vars / translations
+  src/24815_AirtameEmergencyAlert.py               class AirtameEmergencyAlert24815(hsl20_4.BaseModule)
+  release/                                         generator.pyc output (.hsl, gitignored)
+  debug/                                           generator.pyc output (.py for simulator, gitignored)
 
-tests/                                          pytest suite (Python 3) with hsl20_4 stub
-  conftest.py                                   Injects the stub, loads the digit-prefixed source file
-  _hsl20_4_stub.py                              Minimal BaseModule / Framework stand-in
-  test_payload.py  test_client.py
-  test_module.py   test_debounce.py
+projects/airtame_emergency_hsl3/                -- HSL3 project (SDK 3.0)
+  config_airtame_emergency.json                    JSON config (inputs/outputs/stores/timers/scripts)
+  hsl3_24815_airtame_emergency.py                  class LogicModule (no inheritance, framework injected)
+
+tests/                                          pytest suite (Python 3) covering both
+  conftest.py                                      injects hsl20_4 + hsl3 stubs, loads both source files
+  _hsl20_4_stub.py     _hsl3_stub.py               stand-ins matching the SDK Doxygen surface
+  test_payload.py  test_client.py  test_debounce.py  test_module.py   -- HSL2
+  test_hsl3_module.py                                                  -- HSL3
 
 docs/                                           Pin contract and deployment notes
 examples/                                       curl scripts for manual smoke tests
@@ -51,8 +66,19 @@ See `docs/inputs_outputs.md` for the full pin contract and
 
 ## Generating the .hsl
 
-The HSL2 SDK ships two scripts (in your Experte 4.13 install, under the
-HSL2 framework folder): `create_project.pyc` and `generator.pyc`. Workflow:
+### HSL3 (SDK 3.0)
+
+`HSL3 SDK 3.0/generator/generator3.cpython-39.pyc` consumes the JSON
+config + the script and emits `<id>_<name>.hsl`. The exact CLI shape isn't
+covered here — see the SDK PDFs (`HSL3 SDK 3.0 Doku EN.pdf` /
+`Doku DE.pdf`) for the invocation — but the file pair this repo ships
+already matches the layout of the SDK's `examples/http_request/` module
+(JSON beside the `.py`, `scripts[0].filename` referencing the script).
+
+### HSL2 (SDK 2.0.7)
+
+The HSL2 SDK ships two scripts (`framework/create_project.pyc` and
+`framework/generator.pyc`). Workflow:
 
 1. Copy this repo's `projects/airtame_emergency/` directory into the
    SDK's `projects/` folder, **or** run
@@ -83,7 +109,7 @@ pip install -r requirements.txt
 pytest -q
 ```
 
-The suite (34 tests) covers:
+The suite (47 tests across HSL2 and HSL3) covers:
 
 * Payload shape for `Initiated` and `Resolved`
 * Validation: missing / oversized headline / description / bad template / bad duration

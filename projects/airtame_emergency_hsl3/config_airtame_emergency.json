@@ -1,0 +1,76 @@
+{
+  "module": {
+    "category": "Airtame",
+    "context": "AirtameEmergencyContext",
+    "id": "24815",
+    "name": "Airtame Emergency Alert",
+    "hsl_filename": "24815_airtame_emergency.hsl",
+    "version": "0.1.0",
+    "inputs": [
+      { "type": "number", "identifier": "trigger",           "init_value": "0",        "label": "Trigger" },
+      { "type": "number", "identifier": "clear",             "init_value": "0",        "label": "Clear" },
+      { "type": "string", "identifier": "headline",          "init_value": "Emergency","label": "Headline" },
+      { "type": "string", "identifier": "description",       "init_value": "Emergency alert from Gira HomeServer.", "label": "Description" },
+      { "type": "string", "identifier": "template",          "init_value": "high",     "label": "Template (high|medium|low)" },
+      { "type": "number", "identifier": "is_drill",          "init_value": "0",        "label": "Is drill" },
+      { "type": "number", "identifier": "duration_seconds",  "init_value": "300",      "label": "Duration (s)" },
+      { "type": "string", "identifier": "api_endpoint",      "init_value": "https://airtame.cloud/api/v3.0/cloud/public/emergency-alerts", "label": "API endpoint" },
+      { "type": "string", "identifier": "api_key",           "init_value": "",         "label": "API key" },
+      { "type": "string", "identifier": "alert_id_prefix",   "init_value": "gira-hs",  "label": "Alert id prefix" },
+      { "type": "number", "identifier": "timeout_seconds",   "init_value": "10",       "label": "HTTP timeout (s)" },
+      { "type": "number", "identifier": "max_retries",       "init_value": "2",        "label": "Max retries" },
+      { "type": "number", "identifier": "debounce_ms",       "init_value": "1000",     "label": "Debounce (ms)" }
+    ],
+    "outputs": [
+      { "type": "number", "identifier": "active",            "init_value": "0",        "label": "Active" },
+      { "type": "number", "identifier": "success_pulse",     "init_value": "0",        "label": "Success pulse" },
+      { "type": "number", "identifier": "error_pulse",       "init_value": "0",        "label": "Error pulse" },
+      { "type": "number", "identifier": "last_status_code",  "init_value": "0",        "label": "Last HTTP status" },
+      { "type": "string", "identifier": "last_message",      "init_value": "",         "label": "Last message" },
+      { "type": "string", "identifier": "last_alert_id",     "init_value": "",         "label": "Last alert id" }
+    ],
+    "stores": [
+      { "identifier": "active",           "init_value": "0" },
+      { "identifier": "active_alert_id",  "init_value": "" },
+      { "identifier": "counter",          "init_value": "0" },
+      { "identifier": "last_trig_val",    "init_value": "0" },
+      { "identifier": "last_trig_ts_ms",  "init_value": "0" },
+      { "identifier": "last_clr_val",     "init_value": "0" },
+      { "identifier": "last_clr_ts_ms",   "init_value": "0" }
+    ],
+    "timers": [],
+    "scripts": [
+      { "filename": "hsl3_24815_airtame_emergency.py" }
+    ],
+    "translations": [
+      {
+        "language": "de",
+        "name": "Airtame Notruf",
+        "category": "Airtame",
+        "translation_inputs": [
+          { "label": "Auslöser" },
+          { "label": "Aufheben" },
+          { "label": "Überschrift" },
+          { "label": "Beschreibung" },
+          { "label": "Vorlage (high|medium|low)" },
+          { "label": "Übung" },
+          { "label": "Dauer (s)" },
+          { "label": "API-Endpunkt" },
+          { "label": "API-Schlüssel" },
+          { "label": "Alarm-ID-Präfix" },
+          { "label": "HTTP-Timeout (s)" },
+          { "label": "Max. Wiederholungen" },
+          { "label": "Entprellung (ms)" }
+        ],
+        "translation_outputs": [
+          { "label": "Aktiv" },
+          { "label": "Erfolgsimpuls" },
+          { "label": "Fehlerimpuls" },
+          { "label": "Letzter HTTP-Status" },
+          { "label": "Letzte Meldung" },
+          { "label": "Letzte Alarm-ID" }
+        ]
+      }
+    ]
+  }
+}

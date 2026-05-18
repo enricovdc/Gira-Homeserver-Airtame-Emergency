@@ -3,7 +3,7 @@ import airtame_module
 
 def _instance_with_inputs(inputs):
     inst = airtame_module.AirtameEmergencyAlert24815(homeserver_context=object())
-    inst.FRAMEWORK.inputs.update(inputs)
+    inst._input_values.update(inputs)
     return inst
 
 
@@ -30,7 +30,7 @@ def test_rising_edge_fires_then_held_high_does_not_refire():
 def test_debounce_blocks_quick_retrigger(monkeypatch):
     inst = _instance_with_inputs({})
     # Force debounce_ms = 1000, no time passing between calls.
-    inst.FRAMEWORK.inputs[inst.PIN_I_DEBOUNCE_MS] = 1000
+    inst._input_values[inst.PIN_I_DEBOUNCE_MS] = 1000
 
     fake_ms = [0]
 

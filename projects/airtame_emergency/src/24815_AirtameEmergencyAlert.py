@@ -64,6 +64,7 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
         self.REM_LAST_TRIG_TS_MS=5
         self.REM_LAST_CLR_VAL=6
         self.REM_LAST_CLR_TS_MS=7
+        self.FRAMEWORK._run_in_context_thread(self.on_init)
 
 ########################################################################################################
 #### Own written code can be placed after this commentblock . Do not change or delete commentblock! ####
@@ -74,15 +75,15 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
     MAX_DESCRIPTION_LEN = 2000
 
     def on_init(self):
-        active = int(self.FRAMEWORK._get_remanent(self.REM_ACTIVE) or 0)
-        self.FRAMEWORK._set_output_value(self.PIN_O_ACTIVE, 1 if active else 0)
-        self.FRAMEWORK._set_output_value(self.PIN_O_SUCCESS_PULSE, 0)
-        self.FRAMEWORK._set_output_value(self.PIN_O_ERROR_PULSE, 0)
-        self.FRAMEWORK._set_output_value(self.PIN_O_LAST_STATUS_CODE, 0)
-        self.FRAMEWORK._set_output_value(self.PIN_O_LAST_MESSAGE, "")
-        self.FRAMEWORK._set_output_value(
+        active = int(self._get_remanent(self.REM_ACTIVE) or 0)
+        self._set_output_value(self.PIN_O_ACTIVE, 1 if active else 0)
+        self._set_output_value(self.PIN_O_SUCCESS_PULSE, 0)
+        self._set_output_value(self.PIN_O_ERROR_PULSE, 0)
+        self._set_output_value(self.PIN_O_LAST_STATUS_CODE, 0)
+        self._set_output_value(self.PIN_O_LAST_MESSAGE, "")
+        self._set_output_value(
             self.PIN_O_LAST_ALERT_ID,
-            self.FRAMEWORK._get_remanent(self.REM_ACTIVE_ALERT_ID) or "",
+            self._get_remanent(self.REM_ACTIVE_ALERT_ID) or "",
         )
 
     def on_input_value(self, index, value):
@@ -101,13 +102,13 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
     # ------- input / config readers ---------------------------------------
 
     def _pin_str(self, pin):
-        v = self.FRAMEWORK._get_input_value(pin)
+        v = self._get_input_value(pin)
         if v is None:
             return ""
         return v if isinstance(v, str) else str(v)
 
     def _pin_int(self, pin, default=0):
-        v = self.FRAMEWORK._get_input_value(pin)
+        v = self._get_input_value(pin)
         try:
             return int(v)
         except (TypeError, ValueError):
@@ -134,15 +135,15 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
 
     def _rising_edge(self, value, prev_rem, ts_rem):
         cur = 1 if (value and int(value) != 0) else 0
-        prev = int(self.FRAMEWORK._get_remanent(prev_rem) or 0)
-        self.FRAMEWORK._set_remanent(prev_rem, cur)
+        prev = int(self._get_remanent(prev_rem) or 0)
+        self._set_remanent(prev_rem, cur)
         if cur and not prev:
             (_, _, _, _, _, _, _, _, _, _, debounce_ms) = self._config()
             now_ms = int(time.time() * 1000)
-            last_ms = int(self.FRAMEWORK._get_remanent(ts_rem) or 0)
+            last_ms = int(self._get_remanent(ts_rem) or 0)
             # last_ms==0 means "never fired"; bypass debounce for the first edge.
             if last_ms == 0 or (now_ms - last_ms) >= debounce_ms:
-                self.FRAMEWORK._set_remanent(ts_rem, now_ms or 1)
+                self._set_remanent(ts_rem, now_ms or 1)
                 return True
         return False
 
@@ -263,8 +264,8 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
     # ------- trigger / clear handlers -------------------------------------
 
     def _next_alert_id(self, prefix):
-        counter = int(self.FRAMEWORK._get_remanent(self.REM_COUNTER) or 0) + 1
-        self.FRAMEWORK._set_remanent(self.REM_COUNTER, counter)
+        counter = int(self._get_remanent(self.REM_COUNTER) or 0) + 1
+        self._set_remanent(self.REM_COUNTER, counter)
         stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
         return "%s-%s-%d" % (prefix, stamp, counter)
 
@@ -284,12 +285,12 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
                          % (alert_id, self._mask(api_key)))
         status, resp, err = self._send(body, endpoint, api_key, timeout, retries)
         if err == "":
-            self.FRAMEWORK._set_remanent(self.REM_ACTIVE, 1)
-            self.FRAMEWORK._set_remanent(self.REM_ACTIVE_ALERT_ID, alert_id)
-            self.FRAMEWORK._set_output_value(self.PIN_O_ACTIVE, 1)
-            self.FRAMEWORK._set_output_value(self.PIN_O_LAST_STATUS_CODE, status)
-            self.FRAMEWORK._set_output_value(self.PIN_O_LAST_ALERT_ID, alert_id)
-            self.FRAMEWORK._set_output_value(self.PIN_O_LAST_MESSAGE,
+            self._set_remanent(self.REM_ACTIVE, 1)
+            self._set_remanent(self.REM_ACTIVE_ALERT_ID, alert_id)
+            self._set_output_value(self.PIN_O_ACTIVE, 1)
+            self._set_output_value(self.PIN_O_LAST_STATUS_CODE, status)
+            self._set_output_value(self.PIN_O_LAST_ALERT_ID, alert_id)
+            self._set_output_value(self.PIN_O_LAST_MESSAGE,
                                              "alert initiated")
             self._pulse(self.PIN_O_SUCCESS_PULSE)
         elif err in ("config-endpoint", "config-key"):
@@ -300,8 +301,8 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
     def _handle_clear(self):
         (_h, _d, _t, _i, _du,
          endpoint, api_key, _p, timeout, retries, _deb) = self._config()
-        active = int(self.FRAMEWORK._get_remanent(self.REM_ACTIVE) or 0)
-        alert_id = self.FRAMEWORK._get_remanent(self.REM_ACTIVE_ALERT_ID) or ""
+        active = int(self._get_remanent(self.REM_ACTIVE) or 0)
+        alert_id = self._get_remanent(self.REM_ACTIVE_ALERT_ID) or ""
         if not active or not alert_id:
             self.LOGGER.info(0, "[airtame] clear ignored (no active alert)")
             return
@@ -310,10 +311,10 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
         self.LOGGER.info(0, "[airtame] clear id=" + alert_id)
         status, resp, err = self._send(body, endpoint, api_key, timeout, retries)
         if err == "":
-            self.FRAMEWORK._set_remanent(self.REM_ACTIVE, 0)
-            self.FRAMEWORK._set_output_value(self.PIN_O_ACTIVE, 0)
-            self.FRAMEWORK._set_output_value(self.PIN_O_LAST_STATUS_CODE, status)
-            self.FRAMEWORK._set_output_value(self.PIN_O_LAST_MESSAGE,
+            self._set_remanent(self.REM_ACTIVE, 0)
+            self._set_output_value(self.PIN_O_ACTIVE, 0)
+            self._set_output_value(self.PIN_O_LAST_STATUS_CODE, status)
+            self._set_output_value(self.PIN_O_LAST_MESSAGE,
                                              "alert resolved")
             self._pulse(self.PIN_O_SUCCESS_PULSE)
         elif err in ("config-endpoint", "config-key"):
@@ -322,11 +323,11 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
             self._fail(status, "HTTP %d (%s)" % (status, err))
 
     def _pulse(self, pin):
-        self.FRAMEWORK._set_output_value(pin, 1)
-        self.FRAMEWORK._set_output_value(pin, 0)
+        self._set_output_value(pin, 1)
+        self._set_output_value(pin, 0)
 
     def _fail(self, status, message):
         self.LOGGER.error(0, "[airtame] " + message)
-        self.FRAMEWORK._set_output_value(self.PIN_O_LAST_STATUS_CODE, status)
-        self.FRAMEWORK._set_output_value(self.PIN_O_LAST_MESSAGE, message)
+        self._set_output_value(self.PIN_O_LAST_STATUS_CODE, status)
+        self._set_output_value(self.PIN_O_LAST_MESSAGE, message)
         self._pulse(self.PIN_O_ERROR_PULSE)

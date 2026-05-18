@@ -1,19 +1,25 @@
-"""Test bootstrap: inject the hsl20_4 stub into sys.modules and expose the
-generated-class-file module under a clean importable name (the src file
-starts with a digit so ``import 24815_...`` is invalid)."""
+"""Test bootstrap: inject framework stubs into sys.modules and expose the
+generated-class-file modules under clean importable names (their source
+filenames start with digits, so direct import would be invalid)."""
 import importlib.util
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "projects" / "airtame_emergency" / "src" / "24815_AirtameEmergencyAlert.py"
 
-# 1) Provide a stub hsl20_4 module before loading the class file.
-import tests._hsl20_4_stub as _stub
-sys.modules["hsl20_4"] = _stub
+# --- HSL2 ----------------------------------------------------------------
+import tests._hsl20_4_stub as _hsl2_stub
+sys.modules["hsl20_4"] = _hsl2_stub
 
-# 2) Load the digit-prefixed source file under a Python-valid alias.
-spec = importlib.util.spec_from_file_location("airtame_module", str(SRC))
-airtame_module = importlib.util.module_from_spec(spec)
+HSL2_SRC = ROOT / "projects" / "airtame_emergency" / "src" / "24815_AirtameEmergencyAlert.py"
+_spec = importlib.util.spec_from_file_location("airtame_module", str(HSL2_SRC))
+airtame_module = importlib.util.module_from_spec(_spec)
 sys.modules["airtame_module"] = airtame_module
-spec.loader.exec_module(airtame_module)
+_spec.loader.exec_module(airtame_module)
+
+# --- HSL3 ----------------------------------------------------------------
+HSL3_SRC = ROOT / "projects" / "airtame_emergency_hsl3" / "hsl3_24815_airtame_emergency.py"
+_spec3 = importlib.util.spec_from_file_location("airtame_hsl3_module", str(HSL3_SRC))
+airtame_hsl3_module = importlib.util.module_from_spec(_spec3)
+sys.modules["airtame_hsl3_module"] = airtame_hsl3_module
+_spec3.loader.exec_module(airtame_hsl3_module)

@@ -1,16 +1,16 @@
-"""Minimal stand-in for the Gira HSL2 hsl20_4 framework, just enough to import
-and exercise a BaseModule subclass under pytest.
+"""Minimal stand-in for the Gira HSL2 hsl20_4 framework.
 
-The real framework is inlined into the deployed .hsl by generator.pyc, so this
-stub is *only* used in src/ during local Python tests. It models the subset of
-the API the Airtame Emergency Alert module relies on; if the deployed module
-calls something not modeled here, tests will fail with a clean AttributeError
-that points at the missing surface.
+Mirrors the *real* API surface verified against the SDK 2.0.7 source:
+- pin/remanent methods live on BaseModule (NOT on Framework).
+- Framework provides create_*() factories and resolve_dns / get_*() helpers.
+- get_framework_index() == 7.
+The real framework is inlined into the deployed .hsl by generator.pyc; this
+stub is only used in src/ during pytest.
 """
 
-LOGGING_NONE = "NONE"
-LOGGING_SYSLOG = "SYSLOG"
-LOGGING_UDP = "UDP"
+
+LOGGING_NONE = 0
+LOGGING_SYSLOG = 1
 
 
 class _Logger(object):
@@ -24,37 +24,63 @@ class _Logger(object):
 
 
 class _Framework(object):
-    """Tracks pin and remanent state for assertions in tests."""
+    """The real framework exposes HTTP/TCP/UDP/Timer factories. Tests rarely
+    need them; if a future test does, add it here and to the real BaseModule
+    subclass under test."""
 
-    def __init__(self):
-        self.inputs = {}     # pin_index -> value (NUMBER or STRING)
-        self.outputs = {}    # pin_index -> value
-        self.output_history = []  # list of (pin_index, value) in write order
-        self.remanent = {}   # rem_index -> value
+    @staticmethod
+    def get_framework_index():
+        return 7
 
-    def _set_output_value(self, pin, value):
-        self.outputs[pin] = value
-        self.output_history.append((pin, value))
+    def resolve_dns(self, hostname):
+        return hostname
 
-    def _get_input_value(self, pin):
-        return self.inputs.get(pin)
-
-    def _set_remanent(self, idx, value):
-        self.remanent[idx] = value
-
-    def _get_remanent(self, idx):
-        return self.remanent.get(idx)
+    def _run_in_context_thread(self, method_to_call, args=None):
+        # Stub: run synchronously.
+        if args is None:
+            method_to_call()
+        else:
+            method_to_call(*args)
 
 
 class BaseModule(object):
-    def __init__(self, homeserver_context, context_name):
+    def __init__(self, homeserver_context, module_context):
         self._homeserver_context = homeserver_context
-        self._context_name = context_name
+        self._module_context = module_context
         self._framework = _Framework()
         self._logger = _Logger()
+        # Tests poke values into these dicts:
+        self._input_values = {}    # pin_index -> value
+        self._output_values = {}   # pin_index -> value
+        self._output_history = []  # list of (pin_index, value) writes
+        self._remanent_values = {}
 
     def _get_framework(self):
         return self._framework
 
-    def _get_logger(self, logging_type, logging_args):
+    def _get_logger(self, logType, param):
         return self._logger
+
+    # ---- the real API on BaseModule, modeled faithfully -----------------
+
+    def _get_input_value(self, index):
+        return self._input_values.get(index)
+
+    def _set_output_value(self, index, value):
+        self._output_values[index] = value
+        self._output_history.append((index, value))
+
+    def _get_remanent(self, index):
+        return self._remanent_values.get(index)
+
+    def _set_remanent(self, index, value):
+        if isinstance(value, str):
+            value = value[:30000]
+        self._remanent_values[index] = value
+
+    # Callbacks intended to be overridden.
+    def on_init(self):
+        pass
+
+    def on_input_value(self, index, value):
+        pass
