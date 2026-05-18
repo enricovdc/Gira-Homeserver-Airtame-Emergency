@@ -137,15 +137,42 @@ examples/                                       curl scripts for manual smoke te
 See `docs/inputs_outputs.md` for the full pin contract and
 `docs/deployment.md` for installation.
 
-## Pre-generated `.hsl` artefacts
+## Pre-generated artefacts
 
-The deployable `.hsl` files are committed to the repo. Grab the one that
-matches your HomeServer firmware and import it into Experte 4.13:
+Two deliverable forms are committed for each generation. **Prefer the
+`.hslz` archive** if you want to install the module *with its help
+files in one go* via Experte → *Logikbausteine → Importieren*. The bare
+`.hsl` is the same module without help; use it if you're updating an
+existing install.
 
-* HSL2 — [`projects/airtame_emergency/release/24815_AirtameEmergencyAlert.hsl`](projects/airtame_emergency/release/24815_AirtameEmergencyAlert.hsl)
-  (companion debug `.py` next to it under
-  `projects/airtame_emergency/debug/`)
-* HSL3 — [`projects/airtame_emergency_hsl3/24815_airtame_emergency.hsl`](projects/airtame_emergency_hsl3/24815_airtame_emergency.hsl)
+### HSL2
+
+* [`projects/airtame_emergency/release/24815_AirtameEmergencyAlert.hslz`](projects/airtame_emergency/release/24815_AirtameEmergencyAlert.hslz)
+  — `.hsl` + EN/DE help + `style.css`, ready to import.
+* [`projects/airtame_emergency/release/24815_AirtameEmergencyAlert.hsl`](projects/airtame_emergency/release/24815_AirtameEmergencyAlert.hsl)
+  — bare logic node (companion debug `.py` next to it under
+  `projects/airtame_emergency/debug/`).
+
+### HSL3
+
+* [`projects/airtame_emergency_hsl3/24815_airtame_emergency.hslz`](projects/airtame_emergency_hsl3/24815_airtame_emergency.hslz)
+* [`projects/airtame_emergency_hsl3/24815_airtame_emergency.hsl`](projects/airtame_emergency_hsl3/24815_airtame_emergency.hsl)
+
+### HSLZ archive layout
+
+Per the SDK doc at `HSL/HSLZ/en/hslz_structure.html`, an `.hslz` is a
+renamed `.zip` with files at the archive root:
+
+```
+24815_AirtameEmergencyAlert.hsl   the logic node
+EN-log24815.html                  help in English   (<LANG>-log<ID>.html)
+DE-log24815.html                  help in German
+style.css                         shared stylesheet referenced by both
+```
+
+The build script also rewrites the `<link rel="stylesheet">` in the
+help files from `../style.css` (the path used by the repo source layout)
+to `style.css` (the flat HSLZ layout).
 
 ## Help files
 
@@ -166,13 +193,16 @@ package root (see `HSL/HSLZ/` in the SDK docs for the full layout).
 Both were produced by `scripts/generate_hsl.sh` running the official
 SDK generators (`HSL2 SDK 2.0.7/framework/generator.pyc` under
 Python 2.7, and `HSL3 SDK 3.0/generator/generator3.cpython-39.pyc`
-under Python 3.9). To regenerate after editing `config.xml`,
-`config_airtame_emergency.json`, or either of the source modules:
+under Python 3.9). The `.hslz` archives are built on top by
+`scripts/build_hslz.py`. To regenerate everything after editing
+`config.xml`, `config_airtame_emergency.json`, or either of the source
+modules / help files:
 
 ```
 GIRA_SDK_DIR=/path/to/Gira_HomeServer_SDK_Doku \
 PYTHON27=python2.7 PYTHON39=python3.9 \
 ./scripts/generate_hsl.sh
+python3 scripts/build_hslz.py
 ```
 
 ## Generating the .hsl

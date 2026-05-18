@@ -68,4 +68,8 @@ echo "==> HSL3 generator..."
        --target  24815_airtame_emergency.hsl )
 echo "   -> projects/airtame_emergency_hsl3/24815_airtame_emergency.hsl"
 
+# -------- HSLZ packaging --------------------------------------------------
+echo "==> Packaging .hslz archives..."
+"$PYTHON39" "$ROOT/scripts/build_hslz.py"
+
 echo "Done."

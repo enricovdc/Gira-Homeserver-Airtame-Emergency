@@ -12,7 +12,7 @@ venv/
 .vscode/
 dist/
 build/
-*.hslz
+# .hslz archives are committed deliverables - regenerate with scripts/build_hslz.py
 secrets.local.*
 # Note: projects/*/release/ and projects/*/debug/ are committed - they are
 # the deployable artefacts. Regenerate them with scripts/generate_hsl.sh.
