@@ -1,0 +1,163 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN">
+<html>
+    <head>
+        <link rel="stylesheet" href="../style.css">
+        <title>Logic - Airtame Emergency Alert</title>
+        <style>body { background: none; }</style>
+        <meta http-equiv="Content-Type" content="text/html;charset=utf-8">
+    </head>
+    <body>
+        <div class="top-title">Airtame Emergency Alert</div>
+        <div class="nav"><a href="javascript:history.back()">Previous</a> / <a href="javascript:history.forward()">Next</a> | <a href="hlpsearch.html">Search</a> | <a href="index.html">Help</a> / <a href="logic.html">Logic</a> / Airtame Emergency Alert</div>
+
+        <!-- Table of contents -->
+        <div class="index">
+            <div class="index-title"><a id="doc_index_1_"></a>Contents</div>
+            <div class="t-line"><div class="t-chapter"><a href="#auto_index_anchor_1_">1.</a></div><div class="t-text"><a href="#auto_index_anchor_1_">Description</a></div></div>
+            <div class="t-line"><div class="t-chapter"><a href="#auto_index_anchor_2_">2.</a></div><div class="t-text"><a href="#auto_index_anchor_2_">Inputs</a></div></div>
+            <div class="t-line"><div class="t-chapter"><a href="#auto_index_anchor_3_">3.</a></div><div class="t-text"><a href="#auto_index_anchor_3_">Outputs</a></div></div>
+            <div class="t-line"><div class="t-chapter"><a href="#auto_index_anchor_4_">4.</a></div><div class="t-text"><a href="#auto_index_anchor_4_">Other</a></div></div>
+            <div class="t-line"><div class="t-chapter"><a href="#auto_index_anchor_5_">5.</a></div><div class="t-text"><a href="#auto_index_anchor_5_">Payload formats &amp; AlertTemplate values</a></div></div>
+            <div class="t-line"><div class="t-chapter"><a href="#auto_index_anchor_6_">6.</a></div><div class="t-text"><a href="#auto_index_anchor_6_">Behaviour table</a></div></div>
+        </div>
+
+        <!-- Content -->
+        <div class="content">
+
+            <!-- 1. Description -->
+            <div class="topic">
+                <h2 class="t-line"><a id="auto_index_anchor_1_"></a> <span class="t-chapter">1.</span> <span class="t-text">Description</span></h2>
+                <div class="descr">
+                    Triggers and clears <a href="https://help.airtame.com/hc/en-us/articles/28499448688029-Emergency-alerts-integrations-payload-guidelines">Airtame Emergency Alerts</a> from a KNX / Gira event.
+                    A rising edge on input <i>Trigger</i> sends an <b>Initiated</b> message to the Airtame Cloud public emergency-alerts endpoint;
+                    a rising edge on <i>Clear</i> sends a <b>Resolved</b> message that references the active alert.<br>
+                    Both Airtame payload formats are supported, selectable per instance via the <i>Payload format</i> input:
+                    <ul>
+                        <li><b>json</b> &mdash; Airtame Option&nbsp;2 (recommended in the docs), <code>Content-Type: application/json</code>.</li>
+                        <li><b>cap</b> &mdash; Airtame Option&nbsp;1 (CAP 1.2 XML), <code>Content-Type: application/xml</code>, strictly validated against the CAP XSD.</li>
+                    </ul>
+                    The module authenticates via HTTP Basic with the configured API key, retries on <code>429</code> / <code>5xx</code> / timeouts with exponential backoff, and uses the remanent store to survive HomeServer restarts mid-alert.
+                </div>
+                <div class="alert-box ibox-warn">
+                    <div class="box-title">Important</div>
+                    <div class="box-text"><div class="descr">
+                        The endpoint <b>must</b> be HTTPS. The module refuses to send to an <code>http://</code> URL and reports
+                        <code>config: endpoint must use HTTPS</code> on <i>Last message</i> instead.
+                        The <i>API key</i> is sent as the password of an HTTP Basic header &mdash; treat it as a secret and never log it in plaintext.
+                    </div></div>
+                </div>
+                <div class="alert-box ibox-hint">
+                    <div class="box-title">Note</div>
+                    <div class="box-text"><div class="descr">
+                        For CAP, Airtame uses <code>&lt;urgency&gt;</code> to choose between high / medium / low templates &mdash;
+                        the SRP templates (secure, lockdown, evacuate, shelter, hold, all-clear, blank) are reachable only via JSON.
+                        Drills (<i>Is drill</i> = 1) use the JSON <code>isDrill: true</code> flag; CAP has no equivalent so drills in CAP are sent with <code>&lt;severity&gt;Minor&lt;/severity&gt;</code> but appear without the Drill badge.
+                    </div></div>
+                </div>
+            </div>
+
+            <!-- 2. Inputs -->
+            <h2 class="t-line"><a id="auto_index_anchor_2_"></a> <span class="t-chapter">2.</span> <span class="t-text">Inputs</span></h2>
+            <div>
+                <table class="table-in">
+                    <tr><th class="io-nr center">No.</th><th class="io-name">Name</th><th class="io-init center">Initialisation</th><th class="io-descr">Description</th></tr>
+                    <tr><td class="io-nr input center">1</td>  <td class="io-name">E1 Trigger</td>                         <td class="io-init center">0</td>     <td class="io-descr"><div class="descr">Rising edge sends an <b>Initiated</b> alert. Held-high does not refire; the trigger must fall and rise again, and at least <i>Debounce (ms)</i> must have elapsed.</div></td></tr>
+                    <tr><td class="io-nr input center">2</td>  <td class="io-name">E2 Clear</td>                           <td class="io-init center">0</td>     <td class="io-descr"><div class="descr">Rising edge sends a <b>Resolved</b> message for the currently active alert. No-op if no alert is active.</div></td></tr>
+                    <tr><td class="io-nr input center">3</td>  <td class="io-name">E3 Headline</td>                        <td class="io-init string center">&quot;Emergency&quot;</td>   <td class="io-descr"><div class="descr">Alert headline (max 200 chars). For SRP templates Airtame overrides this with the protocol-defined title.</div></td></tr>
+                    <tr><td class="io-nr input center">4</td>  <td class="io-name">E4 Description</td>                     <td class="io-init string center">&quot;Emergency alert from Gira HomeServer.&quot;</td>  <td class="io-descr"><div class="descr">Alert description (max 2000 chars). Optional per the Airtame schema.</div></td></tr>
+                    <tr><td class="io-nr input center">5</td>  <td class="io-name">E5 Template</td>                        <td class="io-init string center">&quot;high&quot;</td>       <td class="io-descr"><div class="descr">One of: <code>high</code>, <code>medium</code>, <code>low</code>, <code>blank</code>, <code>all-clear</code>, <code>hold</code>, <code>secure</code>, <code>lockdown</code>, <code>evacuate</code>, <code>shelter</code>. SRP templates only work in JSON mode.</div></td></tr>
+                    <tr><td class="io-nr input center">6</td>  <td class="io-name">E6 Is drill</td>                        <td class="io-init center">0</td>     <td class="io-descr"><div class="descr">Set to 1 for drills. In JSON, Airtame shows a Drill badge.</div></td></tr>
+                    <tr><td class="io-nr input center">7</td>  <td class="io-name">E7 Duration (s)</td>                    <td class="io-init center">300</td>   <td class="io-descr"><div class="descr">Used to compute <code>expiresAt</code> as <i>now</i>&nbsp;+&nbsp;duration. Must be &gt; 0.</div></td></tr>
+                    <tr><td class="io-nr input center">8</td>  <td class="io-name">E8 API endpoint</td>                    <td class="io-init string center">&quot;https://airtame.cloud/api/v3.0/cloud/public/emergency-alerts&quot;</td><td class="io-descr"><div class="descr">Airtame public endpoint. Must start with <code>https://</code>.</div></td></tr>
+                    <tr><td class="io-nr input center">9</td>  <td class="io-name">E9 API key</td>                         <td class="io-init string center">&quot;&quot;</td>        <td class="io-descr"><div class="descr">Airtame Cloud API key &mdash; sent as the HTTP Basic password. Required.</div></td></tr>
+                    <tr><td class="io-nr input center">10</td> <td class="io-name">E10 Alert id prefix</td>                <td class="io-init string center">&quot;gira-hs&quot;</td>    <td class="io-descr"><div class="descr">Generated alert ids look like <code>&lt;prefix&gt;-&lt;UTC stamp&gt;-&lt;counter&gt;</code>.</div></td></tr>
+                    <tr><td class="io-nr input center">11</td> <td class="io-name">E11 HTTP timeout (s)</td>                <td class="io-init center">10</td>    <td class="io-descr"><div class="descr">Per-request HTTP timeout in seconds.</div></td></tr>
+                    <tr><td class="io-nr input center">12</td> <td class="io-name">E12 Max retries</td>                    <td class="io-init center">2</td>     <td class="io-descr"><div class="descr">Retries on <code>429</code>, <code>5xx</code>, and network timeouts with exponential backoff (1, 2, 4&hellip;&nbsp;s).</div></td></tr>
+                    <tr><td class="io-nr input center">13</td> <td class="io-name">E13 Debounce (ms)</td>                  <td class="io-init center">1000</td>  <td class="io-descr"><div class="descr">Minimum interval between accepted rising edges on <i>Trigger</i> or <i>Clear</i>.</div></td></tr>
+                    <tr><td class="io-nr input center">14</td> <td class="io-name">E14 Payload format</td>                 <td class="io-init string center">&quot;json&quot;</td>      <td class="io-descr"><div class="descr"><code>json</code> = Airtame Option&nbsp;2, <code>cap</code> = Airtame Option&nbsp;1 (CAP 1.2 XML).</div></td></tr>
+                    <tr><td class="io-nr input center">15</td> <td class="io-name">E15 Sender id (CAP)</td>                <td class="io-init string center">&quot;gira-homeserver&quot;</td><td class="io-descr"><div class="descr">CAP-only. Used for <code>&lt;sender&gt;</code>, <code>&lt;senderName&gt;</code> and as the prefix of <code>&lt;references&gt;</code> on Cancel.</div></td></tr>
+                    <tr><td class="io-nr input center">16</td> <td class="io-name">E16 CAP category</td>                   <td class="io-init string center">&quot;Safety&quot;</td>     <td class="io-descr"><div class="descr">CAP-only. One of Geo, Met, Safety, Security, Rescue, Fire, Health, Env, Transport, Infra, CBRNE, Other.</div></td></tr>
+                </table>
+            </div>
+
+            <!-- 3. Outputs -->
+            <h2 class="t-line"><a id="auto_index_anchor_3_"></a> <span class="t-chapter">3.</span> <span class="t-text">Outputs</span></h2>
+            <div>
+                <table class="table-out">
+                    <tr><th class="io-nr center">No.</th><th class="io-name">Name</th><th class="io-init center">Initialisation</th><th class="o-sbc center"><a href="logic2.html#_Toc17193931">SBC</a></th><th class="io-descr">Description</th></tr>
+                    <tr><td class="io-nr output center">1</td><td class="io-name">A1 Active</td>             <td class="io-init center">0</td>  <td class="o-sbc center">sbc</td><td class="io-descr"><div class="descr">1 while the most recent <i>Initiated</i> alert has not been <i>Resolved</i>. Restored from remanent store on init.</div></td></tr>
+                    <tr><td class="io-nr output center">2</td><td class="io-name">A2 Success pulse</td>     <td class="io-init center">0</td>  <td class="o-sbc center">s</td>  <td class="io-descr"><div class="descr">Pulses 1 then 0 immediately after each successful 2xx response.</div></td></tr>
+                    <tr><td class="io-nr output center">3</td><td class="io-name">A3 Error pulse</td>       <td class="io-init center">0</td>  <td class="o-sbc center">s</td>  <td class="io-descr"><div class="descr">Pulses 1 then 0 on validation failure, config error, or non-2xx HTTP response.</div></td></tr>
+                    <tr><td class="io-nr output center">4</td><td class="io-name">A4 Last status code</td>  <td class="io-init center">0</td>  <td class="o-sbc center">sbc</td><td class="io-descr"><div class="descr">HTTP status of the last request. <code>0</code> indicates transport error / timeout / config rejection.</div></td></tr>
+                    <tr><td class="io-nr output center">5</td><td class="io-name">A5 Last message</td>      <td class="io-init string center">&quot;&quot;</td><td class="o-sbc center">sbc</td><td class="io-descr"><div class="descr">Short human-readable result. Categories: <code>alert initiated</code>, <code>alert resolved</code>, <code>validation: &hellip;</code>, <code>HTTP &lt;n&gt; (auth | rate-limit | timeout | server | transport)</code>, <code>config: &hellip;</code>.</div></td></tr>
+                    <tr><td class="io-nr output center">6</td><td class="io-name">A6 Last alert id</td>     <td class="io-init string center">&quot;&quot;</td><td class="o-sbc center">sbc</td><td class="io-descr"><div class="descr">ID assigned to the most recent <i>Initiated</i> alert. Kept after <i>Resolve</i> for diagnostics.</div></td></tr>
+                </table>
+                <div class="small">s = <a href="logic2.html#_Toc17193931">send</a>, sbc = <a href="logic2.html#_Toc17193931">send by change</a></div>
+            </div>
+
+            <!-- 4. Other -->
+            <h2 class="t-line"><a id="auto_index_anchor_4_"></a> <span class="t-chapter">4.</span> <span class="t-text">Other</span></h2>
+            <table class="table-logic-info">
+                <tr><th>Recalculation during start:</th><td>Yes &mdash; <code>on_init</code> restores <i>Active</i> and <i>Last alert id</i> from the remanent store.</td></tr>
+                <tr><th>Module is retentive:</th>      <td>Yes &mdash; 8 remanent variables (active flag, active alert id, monotonic counter, edge-detect state for Trigger and Clear, and the CAP <code>sent</code> timestamp).</td></tr>
+                <tr><th>Internal designation:</th>     <td>24815</td></tr>
+                <tr><th>Category:</th>                 <td>Airtame</td></tr>
+                <tr><th>Version:</th>                  <td>v0.1.0</td></tr>
+            </table>
+
+            <!-- 5. Payload formats -->
+            <h2 class="t-line"><a id="auto_index_anchor_5_"></a> <span class="t-chapter">5.</span> <span class="t-text">Payload formats &amp; AlertTemplate values</span></h2>
+            <div class="topic">
+                <div class="descr">
+                    Both formats POST to the same endpoint with the same Basic auth header; only the Content-Type and body differ.
+                </div>
+                <div class="descr"><b>JSON (Option 2)</b> &mdash; <code>Content-Type: application/json</code>:</div>
+                <div class="xhtml">
+                    <table>
+                        <tr><th>field</th><th>required</th><th>notes</th></tr>
+                        <tr><td><code>id</code></td>          <td>yes</td><td>unique per alert; same id resolves the alert.</td></tr>
+                        <tr><td><code>status</code></td>      <td>yes</td><td><code>Initiated</code> | <code>Resolved</code></td></tr>
+                        <tr><td><code>template</code></td>    <td>yes</td><td>see table below</td></tr>
+                        <tr><td><code>headline</code></td>    <td>yes</td><td>title shown on screen</td></tr>
+                        <tr><td><code>description</code></td> <td>no</td><td>body text shown on screen</td></tr>
+                        <tr><td><code>isDrill</code></td>     <td>no</td><td>boolean; shows Drill badge</td></tr>
+                        <tr><td><code>expiresAt</code></td>   <td>no</td><td>ISO 8601 with timezone</td></tr>
+                    </table>
+                </div>
+                <div class="descr"><b>CAP 1.2 XML (Option 1)</b> &mdash; <code>Content-Type: application/xml</code>, namespace <code>urn:oasis:names:tc:emergency:cap:1.2</code>. Cancel uses <code>&lt;msgType&gt;Cancel&lt;/msgType&gt;</code> + <code>&lt;references&gt;sender,identifier,sent&lt;/references&gt;</code> pointing at the original. Airtame derives the template from <code>&lt;urgency&gt;</code>:</div>
+                <div class="xhtml">
+                    <table>
+                        <tr><th>Template input</th><th>CAP &lt;urgency&gt;</th><th>Airtame routes to</th></tr>
+                        <tr><td>high, lockdown, evacuate, shelter, secure</td><td>Immediate</td><td>high</td></tr>
+                        <tr><td>medium, hold</td>                              <td>Expected</td> <td>medium</td></tr>
+                        <tr><td>low, all-clear, blank</td>                     <td>Future</td>   <td>low</td></tr>
+                    </table>
+                </div>
+                <div class="alert-box ibox-hint">
+                    <div class="box-title">Choosing a format</div>
+                    <div class="box-text"><div class="descr">
+                        Use <b>json</b> unless your environment specifically requires CAP. SRP templates (lockdown, evacuate, shelter, secure, hold, all-clear, blank) are only reachable via JSON because CAP routes the template through <code>&lt;urgency&gt;</code> only.
+                    </div></div>
+                </div>
+            </div>
+
+            <!-- 6. Behaviour table -->
+            <div class="topic">
+                <h2 class="t-line"><a id="auto_index_anchor_6_"></a> <span class="t-chapter">6.</span> <span class="t-text">Behaviour table</span></h2>
+                <div class="xhtml">
+                    <div class="descr">How the module reacts to common input transitions (debounce window assumed elapsed).</div>
+                    <table>
+                        <tr><th>Trigger</th><th>Clear</th><th>State before</th><th>HTTP sent</th><th>State after</th><th>Pulse</th></tr>
+                        <tr><td>0 &rarr; 1</td><td>0</td>      <td>not active</td><td>Initiated</td>            <td>active</td>      <td>Success</td></tr>
+                        <tr><td>1 &rarr; 1</td><td>0</td>      <td>active</td>    <td>(none, held high)</td>   <td>active</td>      <td>none</td></tr>
+                        <tr><td>0</td>      <td>0 &rarr; 1</td><td>active</td>    <td>Resolved (same id)</td>  <td>not active</td> <td>Success</td></tr>
+                        <tr><td>0</td>      <td>0 &rarr; 1</td><td>not active</td><td>(none, no-op)</td>       <td>not active</td> <td>none</td></tr>
+                        <tr><td>0 &rarr; 1</td><td>0</td>      <td>any</td>       <td>Initiated (HTTP 401)</td><td>unchanged</td>  <td>Error</td></tr>
+                        <tr><td>0 &rarr; 1</td><td>0</td>      <td>any</td>       <td>(none, headline empty)</td><td>unchanged</td><td>Error</td></tr>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </body>
+</html>

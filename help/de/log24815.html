@@ -1,0 +1,163 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN">
+<html>
+    <head>
+        <link rel="stylesheet" href="../style.css">
+        <title>Logik - Airtame Notruf</title>
+        <style>body { background: none; }</style>
+        <meta http-equiv="Content-Type" content="text/html;charset=UTF-8">
+    </head>
+    <body>
+        <div class="top-title">Airtame Notruf</div>
+        <div class="nav"><a href="javascript:history.back()">Zurück</a> / <a href="javascript:history.forward()">Vor</a> | <a href="hlpsearch.html">Suchen</a> | <a href="index.html">Hilfe</a> / <a href="logic.html">Logik</a> / Airtame Notruf</div>
+
+        <!-- Inhaltsverzeichnis -->
+        <div class="index">
+            <div class="index-title"><a id="doc_index_1_"></a>Inhalt</div>
+            <div class="t-line"><div class="t-chapter"><a href="#auto_index_anchor_1_">1.</a></div><div class="t-text"><a href="#auto_index_anchor_1_">Beschreibung</a></div></div>
+            <div class="t-line"><div class="t-chapter"><a href="#auto_index_anchor_2_">2.</a></div><div class="t-text"><a href="#auto_index_anchor_2_">Eingänge</a></div></div>
+            <div class="t-line"><div class="t-chapter"><a href="#auto_index_anchor_3_">3.</a></div><div class="t-text"><a href="#auto_index_anchor_3_">Ausgänge</a></div></div>
+            <div class="t-line"><div class="t-chapter"><a href="#auto_index_anchor_4_">4.</a></div><div class="t-text"><a href="#auto_index_anchor_4_">Sonstiges</a></div></div>
+            <div class="t-line"><div class="t-chapter"><a href="#auto_index_anchor_5_">5.</a></div><div class="t-text"><a href="#auto_index_anchor_5_">Payload-Formate &amp; AlertTemplate-Werte</a></div></div>
+            <div class="t-line"><div class="t-chapter"><a href="#auto_index_anchor_6_">6.</a></div><div class="t-text"><a href="#auto_index_anchor_6_">Verhaltenstabelle</a></div></div>
+        </div>
+
+        <!-- Inhalt -->
+        <div class="content">
+
+            <!-- 1. Beschreibung -->
+            <div class="topic">
+                <h2 class="t-line"><a id="auto_index_anchor_1_"></a> <span class="t-chapter">1.</span> <span class="t-text">Beschreibung</span></h2>
+                <div class="descr">
+                    Löst <a href="https://help.airtame.com/hc/en-us/articles/28499448688029-Emergency-alerts-integrations-payload-guidelines">Airtame Emergency Alerts</a> aus einem KNX-/Gira-Ereignis aus und hebt sie wieder auf.
+                    Eine steigende Flanke am Eingang <i>Auslöser</i> sendet eine <b>Initiated</b>-Nachricht an den öffentlichen Emergency-Alerts-Endpunkt von Airtame Cloud;
+                    eine steigende Flanke am Eingang <i>Aufheben</i> sendet eine <b>Resolved</b>-Nachricht, die auf den aktiven Alarm verweist.<br>
+                    Beide Airtame-Payload-Formate werden unterstützt und sind pro Instanz über den Eingang <i>Payload-Format</i> wählbar:
+                    <ul>
+                        <li><b>json</b> &mdash; Airtame Option&nbsp;2 (in der Doku empfohlen), <code>Content-Type: application/json</code>.</li>
+                        <li><b>cap</b> &mdash; Airtame Option&nbsp;1 (CAP 1.2 XML), <code>Content-Type: application/xml</code>, strikt gegen das CAP-XSD validiert.</li>
+                    </ul>
+                    Authentifizierung erfolgt per HTTP-Basic mit dem konfigurierten API-Schlüssel. Bei <code>429</code> / <code>5xx</code> / Timeouts wird mit exponentiellem Backoff wiederholt.
+                    Der Remanentspeicher trägt den aktiven Alarm über einen HomeServer-Neustart hinweg.
+                </div>
+                <div class="alert-box ibox-warn">
+                    <div class="box-title">Achtung</div>
+                    <div class="box-text"><div class="descr">
+                        Der Endpunkt <b>muss</b> HTTPS sein. Der Baustein verweigert <code>http://</code>-URLs und meldet stattdessen <code>config: endpoint must use HTTPS</code> auf <i>Letzte Meldung</i>.
+                        Der <i>API-Schlüssel</i> wird als Passwort eines HTTP-Basic-Headers gesendet &mdash; entsprechend geheim halten und niemals im Klartext protokollieren.
+                    </div></div>
+                </div>
+                <div class="alert-box ibox-hint">
+                    <div class="box-title">Hinweis</div>
+                    <div class="box-text"><div class="descr">
+                        Für CAP wählt Airtame die Vorlage (high / medium / low) ausschließlich aus <code>&lt;urgency&gt;</code>.
+                        Die SRP-Vorlagen (secure, lockdown, evacuate, shelter, hold, all-clear, blank) sind nur über JSON erreichbar.
+                        Übungen (<i>Übung</i> = 1) verwenden in JSON das Flag <code>isDrill: true</code>; CAP kennt kein Äquivalent, daher werden Übungen in CAP mit <code>&lt;severity&gt;Minor&lt;/severity&gt;</code> versendet, das &bdquo;Drill&ldquo;-Abzeichen erscheint dann jedoch nicht.
+                    </div></div>
+                </div>
+            </div>
+
+            <!-- 2. Eingänge -->
+            <h2 class="t-line"><a id="auto_index_anchor_2_"></a> <span class="t-chapter">2.</span> <span class="t-text">Eingänge</span></h2>
+            <div>
+                <table class="table-in">
+                    <tr><th class="io-nr center">Nr.</th><th class="io-name">Name</th><th class="io-init center">Init</th><th class="io-descr">Beschreibung</th></tr>
+                    <tr><td class="io-nr input center">1</td>  <td class="io-name">E1 Auslöser</td>                       <td class="io-init center">0</td>     <td class="io-descr"><div class="descr">Steigende Flanke sendet einen <b>Initiated</b>-Alarm. Dauerhaftes High löst nicht erneut aus &mdash; der Eingang muss fallen und wieder steigen, und es muss mindestens <i>Entprellung (ms)</i> verstrichen sein.</div></td></tr>
+                    <tr><td class="io-nr input center">2</td>  <td class="io-name">E2 Aufheben</td>                       <td class="io-init center">0</td>     <td class="io-descr"><div class="descr">Steigende Flanke sendet eine <b>Resolved</b>-Nachricht für den aktiven Alarm. Ohne aktiven Alarm: kein Effekt.</div></td></tr>
+                    <tr><td class="io-nr input center">3</td>  <td class="io-name">E3 Überschrift</td>                    <td class="io-init string center">&quot;Emergency&quot;</td>   <td class="io-descr"><div class="descr">Alarm-Überschrift (max. 200 Zeichen). Bei SRP-Vorlagen überschreibt Airtame diese durch den protokoll-definierten Titel.</div></td></tr>
+                    <tr><td class="io-nr input center">4</td>  <td class="io-name">E4 Beschreibung</td>                   <td class="io-init string center">&quot;Emergency alert from Gira HomeServer.&quot;</td>  <td class="io-descr"><div class="descr">Alarm-Beschreibung (max. 2000 Zeichen). Laut Airtame-Schema optional.</div></td></tr>
+                    <tr><td class="io-nr input center">5</td>  <td class="io-name">E5 Vorlage</td>                        <td class="io-init string center">&quot;high&quot;</td>       <td class="io-descr"><div class="descr">Eine von: <code>high</code>, <code>medium</code>, <code>low</code>, <code>blank</code>, <code>all-clear</code>, <code>hold</code>, <code>secure</code>, <code>lockdown</code>, <code>evacuate</code>, <code>shelter</code>. SRP-Vorlagen funktionieren nur im JSON-Modus.</div></td></tr>
+                    <tr><td class="io-nr input center">6</td>  <td class="io-name">E6 Übung</td>                          <td class="io-init center">0</td>     <td class="io-descr"><div class="descr">1 = Übungsalarm. Im JSON-Modus zeigt Airtame ein Drill-Abzeichen.</div></td></tr>
+                    <tr><td class="io-nr input center">7</td>  <td class="io-name">E7 Dauer (s)</td>                      <td class="io-init center">300</td>   <td class="io-descr"><div class="descr">Wird zur Berechnung von <code>expiresAt</code> verwendet (jetzt + Dauer). Muss &gt; 0 sein.</div></td></tr>
+                    <tr><td class="io-nr input center">8</td>  <td class="io-name">E8 API-Endpunkt</td>                   <td class="io-init string center">&quot;https://airtame.cloud/api/v3.0/cloud/public/emergency-alerts&quot;</td><td class="io-descr"><div class="descr">Öffentlicher Airtame-Endpunkt. Muss mit <code>https://</code> beginnen.</div></td></tr>
+                    <tr><td class="io-nr input center">9</td>  <td class="io-name">E9 API-Schlüssel</td>                  <td class="io-init string center">&quot;&quot;</td>        <td class="io-descr"><div class="descr">Airtame-Cloud-API-Schlüssel &mdash; wird als HTTP-Basic-Passwort gesendet. Pflichtfeld.</div></td></tr>
+                    <tr><td class="io-nr input center">10</td> <td class="io-name">E10 Alarm-ID-Präfix</td>               <td class="io-init string center">&quot;gira-hs&quot;</td>    <td class="io-descr"><div class="descr">Erzeugte Alarm-IDs haben die Form <code>&lt;Präfix&gt;-&lt;UTC-Zeitstempel&gt;-&lt;Zähler&gt;</code>.</div></td></tr>
+                    <tr><td class="io-nr input center">11</td> <td class="io-name">E11 HTTP-Timeout (s)</td>               <td class="io-init center">10</td>    <td class="io-descr"><div class="descr">Timeout pro HTTP-Anfrage in Sekunden.</div></td></tr>
+                    <tr><td class="io-nr input center">12</td> <td class="io-name">E12 Max. Wiederholungen</td>           <td class="io-init center">2</td>     <td class="io-descr"><div class="descr">Wiederholungen bei <code>429</code>, <code>5xx</code> und Timeouts mit exponentiellem Backoff (1, 2, 4&hellip;&nbsp;s).</div></td></tr>
+                    <tr><td class="io-nr input center">13</td> <td class="io-name">E13 Entprellung (ms)</td>              <td class="io-init center">1000</td>  <td class="io-descr"><div class="descr">Minimaler Abstand zwischen akzeptierten steigenden Flanken an <i>Auslöser</i> oder <i>Aufheben</i>.</div></td></tr>
+                    <tr><td class="io-nr input center">14</td> <td class="io-name">E14 Payload-Format</td>                <td class="io-init string center">&quot;json&quot;</td>      <td class="io-descr"><div class="descr"><code>json</code> = Airtame Option&nbsp;2, <code>cap</code> = Airtame Option&nbsp;1 (CAP 1.2 XML).</div></td></tr>
+                    <tr><td class="io-nr input center">15</td> <td class="io-name">E15 Sender-ID (CAP)</td>               <td class="io-init string center">&quot;gira-homeserver&quot;</td><td class="io-descr"><div class="descr">Nur CAP. Wird für <code>&lt;sender&gt;</code>, <code>&lt;senderName&gt;</code> und als Präfix in <code>&lt;references&gt;</code> beim Cancel verwendet.</div></td></tr>
+                    <tr><td class="io-nr input center">16</td> <td class="io-name">E16 CAP-Kategorie</td>                 <td class="io-init string center">&quot;Safety&quot;</td>     <td class="io-descr"><div class="descr">Nur CAP. Eine von Geo, Met, Safety, Security, Rescue, Fire, Health, Env, Transport, Infra, CBRNE, Other.</div></td></tr>
+                </table>
+            </div>
+
+            <!-- 3. Ausgänge -->
+            <h2 class="t-line"><a id="auto_index_anchor_3_"></a> <span class="t-chapter">3.</span> <span class="t-text">Ausgänge</span></h2>
+            <div>
+                <table class="table-out">
+                    <tr><th class="io-nr center">Nr.</th><th class="io-name">Name</th><th class="io-init center">Init</th><th class="o-sbc center"><a href="logic2.html#_Toc17193931">SBC</a></th><th class="io-descr">Beschreibung</th></tr>
+                    <tr><td class="io-nr output center">1</td><td class="io-name">A1 Aktiv</td>                <td class="io-init center">0</td>  <td class="o-sbc center">sbc</td><td class="io-descr"><div class="descr">1, solange der zuletzt initiierte Alarm nicht aufgehoben wurde. Wird beim Init aus dem Remanentspeicher wiederhergestellt.</div></td></tr>
+                    <tr><td class="io-nr output center">2</td><td class="io-name">A2 Erfolgsimpuls</td>         <td class="io-init center">0</td>  <td class="o-sbc center">s</td>  <td class="io-descr"><div class="descr">Pulst 1 dann 0 nach jeder erfolgreichen 2xx-Antwort.</div></td></tr>
+                    <tr><td class="io-nr output center">3</td><td class="io-name">A3 Fehlerimpuls</td>          <td class="io-init center">0</td>  <td class="o-sbc center">s</td>  <td class="io-descr"><div class="descr">Pulst 1 dann 0 bei Validierungsfehler, Konfigurationsfehler oder Nicht-2xx-Antwort.</div></td></tr>
+                    <tr><td class="io-nr output center">4</td><td class="io-name">A4 Letzter HTTP-Status</td>   <td class="io-init center">0</td>  <td class="o-sbc center">sbc</td><td class="io-descr"><div class="descr">HTTP-Status der letzten Anfrage. <code>0</code> = Transport-Fehler / Timeout / Konfig-Ablehnung.</div></td></tr>
+                    <tr><td class="io-nr output center">5</td><td class="io-name">A5 Letzte Meldung</td>        <td class="io-init string center">&quot;&quot;</td><td class="o-sbc center">sbc</td><td class="io-descr"><div class="descr">Kurze, lesbare Statusmeldung. Kategorien: <code>alert initiated</code>, <code>alert resolved</code>, <code>validation: &hellip;</code>, <code>HTTP &lt;n&gt; (auth | rate-limit | timeout | server | transport)</code>, <code>config: &hellip;</code>.</div></td></tr>
+                    <tr><td class="io-nr output center">6</td><td class="io-name">A6 Letzte Alarm-ID</td>       <td class="io-init string center">&quot;&quot;</td><td class="o-sbc center">sbc</td><td class="io-descr"><div class="descr">ID des zuletzt initiierten Alarms. Bleibt nach Aufheben erhalten (für Diagnose).</div></td></tr>
+                </table>
+                <div class="small">s = <a href="logic2.html#_Toc17193931">send</a>, sbc = <a href="logic2.html#_Toc17193931">send by change</a></div>
+            </div>
+
+            <!-- 4. Sonstiges -->
+            <h2 class="t-line"><a id="auto_index_anchor_4_"></a> <span class="t-chapter">4.</span> <span class="t-text">Sonstiges</span></h2>
+            <table class="table-logic-info">
+                <tr><th>Neuberechnung bei Start:</th><td>Ja &mdash; <code>on_init</code> stellt <i>Aktiv</i> und <i>Letzte Alarm-ID</i> aus dem Remanentspeicher wieder her.</td></tr>
+                <tr><th>Baustein ist remanent:</th>  <td>Ja &mdash; 8 remanente Variablen (Aktiv-Flag, aktive Alarm-ID, monotoner Zähler, Flankenerkennung für Auslöser und Aufheben sowie der CAP-<code>sent</code>-Zeitstempel).</td></tr>
+                <tr><th>Interne Bezeichnung:</th>    <td>24815</td></tr>
+                <tr><th>Kategorie:</th>              <td>Airtame</td></tr>
+                <tr><th>Version:</th>                <td>v0.1.0</td></tr>
+            </table>
+
+            <!-- 5. Payload-Formate -->
+            <h2 class="t-line"><a id="auto_index_anchor_5_"></a> <span class="t-chapter">5.</span> <span class="t-text">Payload-Formate &amp; AlertTemplate-Werte</span></h2>
+            <div class="topic">
+                <div class="descr">
+                    Beide Formate sprechen denselben Endpunkt mit derselben Basic-Auth-Header an &mdash; nur Content-Type und Body unterscheiden sich.
+                </div>
+                <div class="descr"><b>JSON (Option 2)</b> &mdash; <code>Content-Type: application/json</code>:</div>
+                <div class="xhtml">
+                    <table>
+                        <tr><th>Feld</th><th>Pflicht</th><th>Hinweis</th></tr>
+                        <tr><td><code>id</code></td>          <td>ja</td><td>eindeutig pro Alarm; gleiche ID hebt den Alarm auf.</td></tr>
+                        <tr><td><code>status</code></td>      <td>ja</td><td><code>Initiated</code> | <code>Resolved</code></td></tr>
+                        <tr><td><code>template</code></td>    <td>ja</td><td>siehe Tabelle unten</td></tr>
+                        <tr><td><code>headline</code></td>    <td>ja</td><td>Titel auf dem Bildschirm</td></tr>
+                        <tr><td><code>description</code></td> <td>nein</td><td>Textkörper auf dem Bildschirm</td></tr>
+                        <tr><td><code>isDrill</code></td>     <td>nein</td><td>Boolean; zeigt Drill-Abzeichen</td></tr>
+                        <tr><td><code>expiresAt</code></td>   <td>nein</td><td>ISO 8601 mit Zeitzone</td></tr>
+                    </table>
+                </div>
+                <div class="descr"><b>CAP 1.2 XML (Option 1)</b> &mdash; <code>Content-Type: application/xml</code>, Namespace <code>urn:oasis:names:tc:emergency:cap:1.2</code>. Cancel verwendet <code>&lt;msgType&gt;Cancel&lt;/msgType&gt;</code> + <code>&lt;references&gt;sender,identifier,sent&lt;/references&gt;</code> mit Verweis auf den Original-Alarm. Airtame leitet die Vorlage aus <code>&lt;urgency&gt;</code> ab:</div>
+                <div class="xhtml">
+                    <table>
+                        <tr><th>Eingang &bdquo;Vorlage&ldquo;</th><th>CAP &lt;urgency&gt;</th><th>Airtame wählt</th></tr>
+                        <tr><td>high, lockdown, evacuate, shelter, secure</td><td>Immediate</td><td>high</td></tr>
+                        <tr><td>medium, hold</td>                              <td>Expected</td> <td>medium</td></tr>
+                        <tr><td>low, all-clear, blank</td>                     <td>Future</td>   <td>low</td></tr>
+                    </table>
+                </div>
+                <div class="alert-box ibox-hint">
+                    <div class="box-title">Format wählen</div>
+                    <div class="box-text"><div class="descr">
+                        Standardmäßig <b>json</b> verwenden, außer die Umgebung verlangt explizit CAP. SRP-Vorlagen (lockdown, evacuate, shelter, secure, hold, all-clear, blank) sind nur per JSON erreichbar, weil CAP die Vorlage ausschließlich über <code>&lt;urgency&gt;</code> auswählt.
+                    </div></div>
+                </div>
+            </div>
+
+            <!-- 6. Verhaltenstabelle -->
+            <div class="topic">
+                <h2 class="t-line"><a id="auto_index_anchor_6_"></a> <span class="t-chapter">6.</span> <span class="t-text">Verhaltenstabelle</span></h2>
+                <div class="xhtml">
+                    <div class="descr">Reaktion des Bausteins auf typische Eingangs-Übergänge (Entprell-Fenster bereits abgelaufen).</div>
+                    <table>
+                        <tr><th>Auslöser</th><th>Aufheben</th><th>Zustand vorher</th><th>HTTP gesendet</th><th>Zustand nachher</th><th>Impuls</th></tr>
+                        <tr><td>0 &rarr; 1</td><td>0</td>      <td>nicht aktiv</td><td>Initiated</td>           <td>aktiv</td>      <td>Erfolg</td></tr>
+                        <tr><td>1 &rarr; 1</td><td>0</td>      <td>aktiv</td>      <td>(keine, Dauerhigh)</td>  <td>aktiv</td>      <td>keiner</td></tr>
+                        <tr><td>0</td>      <td>0 &rarr; 1</td><td>aktiv</td>      <td>Resolved (gleiche ID)</td><td>nicht aktiv</td><td>Erfolg</td></tr>
+                        <tr><td>0</td>      <td>0 &rarr; 1</td><td>nicht aktiv</td><td>(keine, no-op)</td>      <td>nicht aktiv</td><td>keiner</td></tr>
+                        <tr><td>0 &rarr; 1</td><td>0</td>      <td>beliebig</td>   <td>Initiated (HTTP 401)</td><td>unverändert</td><td>Fehler</td></tr>
+                        <tr><td>0 &rarr; 1</td><td>0</td>      <td>beliebig</td>   <td>(keine, Überschrift leer)</td><td>unverändert</td><td>Fehler</td></tr>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </body>
+</html>

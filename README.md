@@ -147,6 +147,22 @@ matches your HomeServer firmware and import it into Experte 4.13:
   `projects/airtame_emergency/debug/`)
 * HSL3 — [`projects/airtame_emergency_hsl3/24815_airtame_emergency.hsl`](projects/airtame_emergency_hsl3/24815_airtame_emergency.hsl)
 
+## Help files
+
+Bundled HTML help for the logic node, following the SDK's
+`Help Template` shape (chapters Description / Inputs / Outputs / Other /
+Payload formats / Behaviour). Drop them into the HS help directory so
+Experte can show them on F1:
+
+* English — [`help/en/log24815.html`](help/en/log24815.html)
+* Deutsch — [`help/de/log24815.html`](help/de/log24815.html)
+* Shared stylesheet — [`help/style.css`](help/style.css)
+
+File-name convention is `log<LBS-number>.html` so they live next to the
+factory help pages. When packaging the module as a `.hslz` archive,
+include these files under `help/en/` and `help/de/` relative to the
+package root (see `HSL/HSLZ/` in the SDK docs for the full layout).
+
 Both were produced by `scripts/generate_hsl.sh` running the official
 SDK generators (`HSL2 SDK 2.0.7/framework/generator.pyc` under
 Python 2.7, and `HSL3 SDK 3.0/generator/generator3.cpython-39.pyc`
