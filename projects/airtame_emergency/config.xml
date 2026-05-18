@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<config>
+    <modules>
+        <module category="Airtame" context="airtame_emergency" id="24815" name="Airtame Emergency Alert" version="v0.1.0" internal_name="AirtameEmergencyAlert" external_name="Airtame Emergency Alert">
+            <inputs>
+                <input type="NUMBER" const_name="TRIGGER"            init_value="0">Trigger - rising edge initiates an alert</input>
+                <input type="NUMBER" const_name="CLEAR"              init_value="0">Clear - rising edge resolves the active alert</input>
+                <input type="STRING" const_name="HEADLINE"           init_value="Emergency">Alert headline</input>
+                <input type="STRING" const_name="DESCRIPTION"        init_value="Emergency alert from Gira HomeServer.">Alert description</input>
+                <input type="STRING" const_name="TEMPLATE"           init_value="high">Template - high, medium, or low</input>
+                <input type="NUMBER" const_name="IS_DRILL"           init_value="0">Is-drill flag (0 or 1)</input>
+                <input type="NUMBER" const_name="DURATION_SECONDS"   init_value="300">Alert duration in seconds</input>
+                <input type="STRING" const_name="API_ENDPOINT"       init_value="https://airtame.cloud/api/v3.0/cloud/public/emergency-alerts">Airtame API endpoint (must be HTTPS)</input>
+                <input type="STRING" const_name="API_KEY"            init_value="">Airtame Cloud API key (Basic auth password)</input>
+                <input type="STRING" const_name="ALERT_ID_PREFIX"    init_value="gira-hs">Prefix for generated alert ids</input>
+                <input type="NUMBER" const_name="TIMEOUT_SECONDS"    init_value="10">HTTP timeout in seconds</input>
+                <input type="NUMBER" const_name="MAX_RETRIES"        init_value="2">Max retries on 429 / 5xx / timeout</input>
+                <input type="NUMBER" const_name="DEBOUNCE_MS"        init_value="1000">Minimum interval between accepted rising edges</input>
+            </inputs>
+            <outputs>
+                <output type="NUMBER" const_name="ACTIVE"           init_value="0">1 while the most recent alert has not been resolved</output>
+                <output type="NUMBER" const_name="SUCCESS_PULSE"    init_value="0">Pulses 1 then 0 after each successful 2xx response</output>
+                <output type="NUMBER" const_name="ERROR_PULSE"      init_value="0">Pulses 1 then 0 on validation or HTTP failure</output>
+                <output type="NUMBER" const_name="LAST_STATUS_CODE" init_value="0">HTTP status of last request (0 on transport error)</output>
+                <output type="STRING" const_name="LAST_MESSAGE"     init_value="">Short human-readable result or error message</output>
+                <output type="STRING" const_name="LAST_ALERT_ID"    init_value="">ID of the most recent initiated alert</output>
+            </outputs>
+            <remanent_variables>
+                <remanent_variable type="NUMBER" const_name="ACTIVE"           init_value="0">Active flag (survives HS restart)</remanent_variable>
+                <remanent_variable type="STRING" const_name="ACTIVE_ALERT_ID"  init_value="">Currently-open alert id</remanent_variable>
+                <remanent_variable type="NUMBER" const_name="COUNTER"          init_value="0">Monotonic counter for alert id suffix</remanent_variable>
+                <remanent_variable type="NUMBER" const_name="LAST_TRIG_VAL"    init_value="0">Last seen trigger value (edge detect)</remanent_variable>
+                <remanent_variable type="NUMBER" const_name="LAST_TRIG_TS_MS"  init_value="0">Last accepted trigger edge timestamp (ms)</remanent_variable>
+                <remanent_variable type="NUMBER" const_name="LAST_CLR_VAL"     init_value="0">Last seen clear value (edge detect)</remanent_variable>
+                <remanent_variable type="NUMBER" const_name="LAST_CLR_TS_MS"   init_value="0">Last accepted clear edge timestamp (ms)</remanent_variable>
+            </remanent_variables>
+            <translations>
+                <translation language="en" name="Airtame Emergency Alert" category="Airtame">
+                    <translation_inputs>
+                        <translation_input>Trigger</translation_input>
+                        <translation_input>Clear</translation_input>
+                        <translation_input>Headline</translation_input>
+                        <translation_input>Description</translation_input>
+                        <translation_input>Template</translation_input>
+                        <translation_input>Is drill</translation_input>
+                        <translation_input>Duration (s)</translation_input>
+                        <translation_input>API endpoint</translation_input>
+                        <translation_input>API key</translation_input>
+                        <translation_input>Alert id prefix</translation_input>
+                        <translation_input>Timeout (s)</translation_input>
+                        <translation_input>Max retries</translation_input>
+                        <translation_input>Debounce (ms)</translation_input>
+                    </translation_inputs>
+                    <translation_outputs>
+                        <translation_output>Active</translation_output>
+                        <translation_output>Success pulse</translation_output>
+                        <translation_output>Error pulse</translation_output>
+                        <translation_output>Last status code</translation_output>
+                        <translation_output>Last message</translation_output>
+                        <translation_output>Last alert id</translation_output>
+                    </translation_outputs>
+                </translation>
+            </translations>
+        </module>
+    </modules>
+    <logging type="None" ip="" port="" />
+</config>

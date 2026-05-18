@@ -1,32 +1,27 @@
 import base64
-import json
-from dataclasses import dataclass, field
-from typing import List
 
 import pytest
 
-from reference.airtame_client import (
-    AirtameAuthError,
-    AirtameClient,
-    AirtameError,
-    AirtameRateLimitError,
-    AirtameResponse,
-    AirtameServerError,
-    AirtameTimeoutError,
-    mask_secret,
-)
+import airtame_module
 
 
-@dataclass
-class FakeTransport:
-    """Replays a queued list of responses; raises TimeoutError sentinels on demand."""
-    responses: List[object]  # AirtameResponse or BaseException
-    calls: list = field(default_factory=list)
+def _make_instance():
+    return airtame_module.AirtameEmergencyAlert24815(homeserver_context=object())
 
-    def __call__(self, method, url, headers, body, timeout):
-        self.calls.append(
-            {"method": method, "url": url, "headers": dict(headers), "body": body, "timeout": timeout}
-        )
+
+class FakeHTTP(object):
+    """Records calls to _http_post and replays a queued list of responses.
+
+    Each item in `responses` is either a (status, body_text) tuple or an
+    exception instance to raise when that attempt is made.
+    """
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    def __call__(self, url, headers, body, timeout):
+        self.calls.append({"url": url, "headers": dict(headers),
+                           "body": body, "timeout": timeout})
         item = self.responses.pop(0)
         if isinstance(item, BaseException):
             raise item
@@ -34,109 +29,114 @@ class FakeTransport:
 
 
 @pytest.fixture
-def sleep_recorder():
-    delays = []
-    return delays, delays.append
+def no_sleep(monkeypatch):
+    monkeypatch.setattr(airtame_module.time, "sleep", lambda _s: None)
 
 
-def make_client(transport, sleep_fn=lambda _s: None, **overrides):
-    kwargs = dict(api_key="k" * 32, transport=transport, sleep=sleep_fn, max_retries=2)
-    kwargs.update(overrides)
-    return AirtameClient(**kwargs)
+def test_send_uses_basic_auth_and_https_endpoint(no_sleep):
+    inst = _make_instance()
+    fake = FakeHTTP([(200, '{"ok":true}')])
+    inst._http_post = fake
 
-
-def test_send_posts_json_with_basic_auth():
-    transport = FakeTransport([AirtameResponse(200, '{"ok":true}')])
-    client = make_client(transport)
-    resp = client.send({"id": "i", "status": "Initiated"})
-
-    assert resp.status_code == 200
-    call = transport.calls[0]
-    assert call["method"] == "POST"
-    assert call["url"] == "https://airtame.cloud/api/v3.0/cloud/public/emergency-alerts"
-    assert call["headers"]["Content-Type"] == "application/json"
+    status, body, err = inst._send(
+        '{"id":"i","status":"Initiated"}',
+        "https://airtame.cloud/x",
+        "k" * 32,
+        timeout_s=5,
+        max_retries=0,
+    )
+    assert (status, err) == (200, "")
+    call = fake.calls[0]
     auth = call["headers"]["Authorization"]
     assert auth.startswith("Basic ")
     decoded = base64.b64decode(auth.split(" ", 1)[1]).decode()
-    assert decoded.endswith(":" + "k" * 32)
-    assert json.loads(call["body"]) == {"id": "i", "status": "Initiated"}
+    assert decoded == "gira:" + "k" * 32
+    assert call["headers"]["Content-Type"] == "application/json"
 
 
-def test_missing_api_key_rejected():
-    with pytest.raises(AirtameAuthError):
-        AirtameClient(api_key="")
+def test_send_rejects_non_https_endpoint():
+    inst = _make_instance()
+    status, body, err = inst._send("{}", "http://airtame.cloud/x", "k",
+                                   timeout_s=5, max_retries=0)
+    assert err == "config-endpoint"
 
 
-def test_non_https_endpoint_rejected():
-    with pytest.raises(AirtameError):
-        AirtameClient(api_key="k", endpoint="http://airtame.cloud/x")
+def test_send_rejects_empty_key():
+    inst = _make_instance()
+    status, body, err = inst._send("{}", "https://airtame.cloud/x", "",
+                                   timeout_s=5, max_retries=0)
+    assert err == "config-key"
 
 
-def test_401_raises_auth_error():
-    transport = FakeTransport([AirtameResponse(401, "nope")])
-    client = make_client(transport)
-    with pytest.raises(AirtameAuthError):
-        client.send({"id": "i"})
+def test_send_401_is_auth_error(no_sleep):
+    inst = _make_instance()
+    inst._http_post = FakeHTTP([(401, "nope")])
+    status, body, err = inst._send("{}", "https://airtame.cloud/x", "k",
+                                   timeout_s=5, max_retries=2)
+    assert (status, err) == (401, "auth")
 
 
-def test_403_raises_auth_error():
-    transport = FakeTransport([AirtameResponse(403, "forbidden")])
-    client = make_client(transport)
-    with pytest.raises(AirtameAuthError):
-        client.send({"id": "i"})
+def test_send_403_is_auth_error(no_sleep):
+    inst = _make_instance()
+    inst._http_post = FakeHTTP([(403, "forbidden")])
+    status, body, err = inst._send("{}", "https://airtame.cloud/x", "k",
+                                   timeout_s=5, max_retries=2)
+    assert (status, err) == (403, "auth")
 
 
-def test_429_retries_then_raises(sleep_recorder):
-    delays, sleep_fn = sleep_recorder
-    transport = FakeTransport(
-        [AirtameResponse(429, "slow down"), AirtameResponse(429, "slow down"), AirtameResponse(429, "slow down")]
-    )
-    client = make_client(transport, sleep_fn=sleep_fn, retry_backoff_seconds=0.1)
-    with pytest.raises(AirtameRateLimitError):
-        client.send({"id": "i"})
-    assert len(transport.calls) == 3  # initial + 2 retries
-    assert delays == [0.1, 0.2]  # exponential backoff
+def test_send_429_retries_then_gives_up(no_sleep):
+    inst = _make_instance()
+    fake = FakeHTTP([(429, ""), (429, ""), (429, "")])
+    inst._http_post = fake
+    status, body, err = inst._send("{}", "https://airtame.cloud/x", "k",
+                                   timeout_s=5, max_retries=2)
+    assert (status, err) == (429, "rate-limit")
+    assert len(fake.calls) == 3
 
 
-def test_429_recovers_after_retry(sleep_recorder):
-    delays, sleep_fn = sleep_recorder
-    transport = FakeTransport([AirtameResponse(429, ""), AirtameResponse(200, "ok")])
-    client = make_client(transport, sleep_fn=sleep_fn, retry_backoff_seconds=0.05)
-    resp = client.send({"id": "i"})
-    assert resp.status_code == 200
-    assert len(transport.calls) == 2
+def test_send_429_then_200_recovers(no_sleep):
+    inst = _make_instance()
+    fake = FakeHTTP([(429, ""), (200, "ok")])
+    inst._http_post = fake
+    status, body, err = inst._send("{}", "https://airtame.cloud/x", "k",
+                                   timeout_s=5, max_retries=2)
+    assert (status, err) == (200, "")
+    assert len(fake.calls) == 2
 
 
-def test_5xx_retries_then_raises(sleep_recorder):
-    delays, sleep_fn = sleep_recorder
-    transport = FakeTransport(
-        [AirtameResponse(503, ""), AirtameResponse(503, ""), AirtameResponse(500, "boom")]
-    )
-    client = make_client(transport, sleep_fn=sleep_fn, retry_backoff_seconds=0.0)
-    with pytest.raises(AirtameServerError):
-        client.send({"id": "i"})
-    assert len(transport.calls) == 3
+def test_send_5xx_retries_then_gives_up(no_sleep):
+    inst = _make_instance()
+    fake = FakeHTTP([(503, ""), (502, ""), (500, "boom")])
+    inst._http_post = fake
+    status, body, err = inst._send("{}", "https://airtame.cloud/x", "k",
+                                   timeout_s=5, max_retries=2)
+    assert err == "server"
+    assert status == 500
+    assert len(fake.calls) == 3
 
 
-def test_timeout_retries_then_raises():
-    transport = FakeTransport(
-        [AirtameTimeoutError("timed out"), AirtameTimeoutError("timed out"), AirtameTimeoutError("timed out")]
-    )
-    client = make_client(transport, retry_backoff_seconds=0.0)
-    with pytest.raises(AirtameTimeoutError):
-        client.send({"id": "i"})
-    assert len(transport.calls) == 3
+def test_send_timeout_retries_then_gives_up(no_sleep):
+    inst = _make_instance()
+    timeout = airtame_module.URLError("timed out")
+    inst._http_post = FakeHTTP([timeout, timeout, timeout])
+    status, body, err = inst._send("{}", "https://airtame.cloud/x", "k",
+                                   timeout_s=5, max_retries=2)
+    assert (status, err) == (0, "timeout")
 
 
-def test_mask_secret_hides_middle():
-    assert mask_secret("abcdefgh") == "ab****gh"
-    assert mask_secret("ab") == "**"
-    assert mask_secret("") == ""
+def test_send_other_4xx_no_retry(no_sleep):
+    inst = _make_instance()
+    fake = FakeHTTP([(404, "not found")])
+    inst._http_post = fake
+    status, body, err = inst._send("{}", "https://airtame.cloud/x", "k",
+                                   timeout_s=5, max_retries=2)
+    assert (status, err) == (404, "transport")
+    assert len(fake.calls) == 1
 
 
-def test_secret_is_never_in_str_repr():
-    transport = FakeTransport([AirtameResponse(200, "ok")])
-    client = make_client(transport)
-    assert "k" * 32 not in repr(client) or "Authorization" not in repr(client)
-    # Stronger: ensure logs would not include the key by checking masking helper.
-    assert mask_secret("k" * 32) != "k" * 32
+def test_mask_secret_helper():
+    inst = _make_instance()
+    assert inst._mask("") == ""
+    assert inst._mask("ab") == "**"
+    assert inst._mask("abcdefgh") == "ab****gh"
+    assert inst._mask("k" * 32) != "k" * 32

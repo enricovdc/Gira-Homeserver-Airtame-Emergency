@@ -3,98 +3,143 @@
 ## 1. Get an Airtame API key
 
 1. Log in to Airtame Cloud as an organization admin.
-2. Open the Emergency Alerts integration settings.
-3. Generate an API key. Copy it somewhere safe — Airtame only shows it once.
+2. Open the Emergency Alerts integration settings and generate an API key.
+3. Copy it somewhere safe — Airtame only shows it once.
 
-## 2. Generate the .hsl
+## 2. Locate the Gira HSL2 SDK
 
-The deployable artifact is a single `.hsl` file produced from
-`gen/generate_lbs24815.py`. Two ways to produce it:
-
-### Preferred: Gira Experte 4.13's bundled generator
-
-1. Find the HSL generator script bundled with your Experte 4.13 install
-   (a `.py` file under the install directory).
-2. Run it against `gen/generate_lbs24815.py`. The top-of-file constants
-   (`LBS_NUMBER = 24815`, `LBS_NAME`, `PARAMETERS`, `INPUTS`, `OUTPUTS`,
-   `HSL_BODY`) describe everything the generator needs.
-3. If the generator expects different constant names (e.g. lowercase, or
-   wrapped in a `define_module(...)` call), rename the top-level constants
-   in `gen/generate_lbs24815.py` to match. Don't change the values.
-4. The generator emits a canonical `lbs24815.hsl` containing the LBS
-   metadata header followed by `HSL_BODY`.
-
-### Fallback: run the source file directly
+The SDK ships with Gira Experte 4.13. Inside the install you'll find a
+`framework/` directory with at minimum:
 
 ```
-python3 gen/generate_lbs24815.py
-# writes dist/lbs24815.hsl
+framework/
+  create_project.pyc      # scaffolds a new project tree
+  generator.pyc           # turns src/<id>_<name>.py + config.xml -> release/<id>_<name>.hsl
+  hsl20/                  # framework Python modules (hsl20_4.py, debug_page, etc.)
+  projects/               # holds one folder per logic module project
 ```
 
-This uses a best-effort header dialect. Use it only if you can't run the
-Gira generator. The body code is identical either way.
+Both `.pyc` files were inspected to build this repo; the project layout
+matches what `create_project.pyc` produces.
 
-## 3. Import into Experte
+## 3. Drop in the project
+
+Two equivalent ways:
+
+### a) Copy the directory in
+
+Copy `projects/airtame_emergency/` from this repo into the SDK's
+`projects/` directory:
+
+```
+<SDK>/framework/projects/airtame_emergency/
+                          config.xml
+                          src/24815_AirtameEmergencyAlert.py
+```
+
+### b) Scaffold first, then replace
+
+```
+cd <SDK>/framework
+python create_project.pyc -p "airtame_emergency"
+# overwrite the generated config.xml and src/* with the ones from this repo
+```
+
+## 4. Generate
+
+From the SDK framework directory:
+
+```
+python generator.pyc "airtame_emergency" UTF-8
+```
+
+The generator:
+
+1. Reads `projects/airtame_emergency/config.xml`.
+2. Reads `projects/airtame_emergency/src/24815_AirtameEmergencyAlert.py`.
+3. Splits the source at the `##!!!!##` and `##!!!##` sentinel markers,
+   re-emits the metadata block in between (pin constants, BaseModule
+   call) from `config.xml`, and preserves user code outside the markers.
+4. Writes:
+   * `projects/airtame_emergency/release/24815_AirtameEmergencyAlert.hsl`
+     — the deployable artifact (base64+zlib-compressed Python class
+     wrapped in Gira's `5000|/5001|/5012|` line format).
+   * `projects/airtame_emergency/debug/24815_AirtameEmergencyAlert.py`
+     — a flat Python view for the simulator.
+
+## 5. Import into Experte
 
 1. Open your Experte 4.13 project.
-2. Import the generated `lbs24815.hsl` as a new logic module
-   ("Logikbaustein").
-3. Drop the module onto a logic page.
+2. Import the generated `.hsl` from `release/` as a new logic module.
+3. Drop the module onto a logic page; Experte shows the 13 inputs / 6
+   outputs declared in `config.xml`.
 
-### About the LBS number
+## 6. Configure the module instance
 
-`24815` is the module's globally-unique numeric identifier inside an Experte
-project. To avoid collisions with other third-party modules in the same
-project, replace it with a number reserved for you on
-[hs-help.net](https://hs-help.net/) before publishing. Single global
-find/replace in the repo: `LBS_NUMBER = 24815` → your number, and rename
-output files accordingly. Tests don't need to change.
+Set the input init-values:
 
-## 4. Configure the module instance
-
-Set the parameters in Experte:
-
-* `api_endpoint` — leave at default unless Airtame instructs otherwise.
-* `api_key` — paste the API key from step 1. The descriptor declares this
-  as `password` so Experte stores it in the HS password store; the body
-  masks it (`ab****yz`) in trace logs.
-* `alert_id_prefix` — anything that helps you identify Gira-originated
+* `API_ENDPOINT` — leave at default unless Airtame instructs otherwise.
+* `API_KEY` — paste the key from step 1.
+* `ALERT_ID_PREFIX` — anything that helps you spot Gira-originated
   alerts in Airtame's audit log. Default `gira-hs` is fine.
-* `default_headline`, `default_description`, `default_template`,
-  `default_is_drill`, `default_duration_seconds` — fallbacks used when the
-  matching input pin is empty.
-* `timeout_seconds`, `max_retries`, `debounce_ms` — leave at defaults
+* `HEADLINE`, `DESCRIPTION`, `TEMPLATE`, `IS_DRILL`,
+  `DURATION_SECONDS` — fallbacks used when the runtime input is empty.
+* `TIMEOUT_SECONDS`, `MAX_RETRIES`, `DEBOUNCE_MS` — leave at defaults
   unless you have evidence of latency or chattering inputs.
 
-## 5. Wire the inputs
+## 7. Wire the runtime inputs
 
-* **Input 1 (`trigger`)** — connect to the KNX object that represents
-  "emergency active" (e.g. a manual lockdown button or an upstream alarm
-  bus). Fires only on rising edges.
-* **Input 2 (`clear`)** — connect to the KNX object that represents
-  "emergency cleared" (e.g. a key-switch release).
-* Inputs 3–7 are optional. Drive them from string constants or scenes
-  if you want per-scenario headlines / descriptions / drill flags.
+* `TRIGGER` (1) — KNX object representing "emergency active" (lockdown
+  button, alarm bus, etc.). Edge-debounced.
+* `CLEAR` (2) — KNX object representing "emergency cleared".
+* Inputs 3–7 are optional per-scenario overrides — drive from string
+  constants or a scene if you want different messages per alarm.
 
-## 6. Wire the outputs
+## 8. Wire the outputs
 
-* Output 1 (`active`) — useful for visualizations / dashboards.
-* Outputs 2 & 3 (`success_pulse` / `error_pulse`) — drive notification
-  logic (push to mobile, alarm log, etc.).
-* Outputs 4 & 5 (`last_status_code` / `last_message`) — log to a
-  diagnostics page.
-* Output 6 (`last_alert_id`) — useful when correlating with Airtame's
-  audit log.
+* `ACTIVE` (1) — visualizations / dashboards.
+* `SUCCESS_PULSE` / `ERROR_PULSE` (2, 3) — notification logic
+  (push to mobile, alarm log).
+* `LAST_STATUS_CODE` / `LAST_MESSAGE` (4, 5) — diagnostics page.
+* `LAST_ALERT_ID` (6) — correlate with Airtame's audit log.
 
-## 7. Verify
+## 9. Verify
 
-See the manual verification checklist in `README.md` and the
-mocked-HTTP tests in `tests/`.
+* Use `examples/curl_initiate.sh` to confirm the API key works
+  end-to-end against the real Airtame endpoint before relying on the
+  module.
+* Run the pytest suite (`pytest -q`) — 34 tests pin the wire format,
+  retry/error behavior, and edge/debounce.
+* Walk through the manual checklist in `README.md` once installed.
 
-## Notes on the HSL HTTP API
+## About the LBS number
 
-`HSL_BODY` uses `hsl.net.HTTPClient()`, which is available on Gira
-HomeServer 4.x firmware that supports the HSL standard library. If your
-firmware exposes a different HTTP helper (older `system.http_request`,
-etc.), change only the `airtame_send` function in `HSL_BODY`. The wire
-format and behavior are pinned by `tests/test_client.py` and won't change.
+`24815` is the module's globally-unique numeric identifier inside an
+Experte project. To avoid collisions with other third-party modules,
+reserve a number for yourself on
+[hs-help.net](https://hs-help.net/) (community wiki, "LBS-Nummern
+Vergabe") and replace `24815` in:
+
+* `config.xml` `id="..."`
+* file name `src/24815_AirtameEmergencyAlert.py`
+* class name suffix `AirtameEmergencyAlert24815`
+
+The generator derives the class name from `internal_name` + `id`, so
+once you change `id` and the file name, re-run the generator on a
+fresh `src/` (or rename the class manually before regen).
+
+## Notes on the HSL2 framework API
+
+The deployed module uses these `hsl20_4` surfaces:
+
+* `hsl20_4.BaseModule` — base class.
+* `self._get_framework()` — returns the framework object.
+* `self._get_logger(hsl20_4.LOGGING_NONE, ())` — logger; the module
+  uses `info(line, msg)` and `error(line, msg)`.
+* `framework._get_input_value(pin)` / `_set_output_value(pin, value)`.
+* `framework._get_remanent(idx)` / `_set_remanent(idx, value)`.
+
+If your framework version exposes these under different names, edit
+the helper methods in the class file. The HTTP layer is isolated in
+`_http_post`; the test suite pins everything above it so refactors stay
+honest.

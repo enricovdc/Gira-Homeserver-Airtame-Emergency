@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # Smoke-test the Airtame Emergency Alerts endpoint with the same payload
-# shape the Gira HSL module will send. Use this to verify your API key works
-# before you wire the module into a production logic page.
+# shape the module sends. Use this to verify your API key works before
+# wiring the module into a production logic page.
 #
 # Usage:
 #   AIRTAME_API_KEY=xxx ./examples/curl_initiate.sh
-#   AIRTAME_API_KEY=xxx ./examples/curl_resolve.sh <alert-id>
 set -euo pipefail
 
 : "${AIRTAME_API_KEY:?set AIRTAME_API_KEY to your Airtame Cloud API key}"

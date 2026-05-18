@@ -1,163 +1,173 @@
-"""End-to-end behavior tests for the Airtame emergency-alert module wiring."""
+"""End-to-end behavior tests driving on_input_value(), as the HS would."""
 import json
-from dataclasses import dataclass, field
-from typing import List
-
 import pytest
 
-from reference.airtame_client import (
-    AirtameClient,
-    AirtameResponse,
-    AirtameTimeoutError,
-)
-from reference.module import (
-    AirtameEmergencyAlertModule,
-    ModuleInputs,
-    ModuleParameters,
-)
+import airtame_module
 
 
-@dataclass
-class RecordingTransport:
-    responses: List[object]
-    calls: list = field(default_factory=list)
+VALID_INPUT_DEFAULTS = {
+    # Match the init_values declared in config.xml.
+    1: 0,   # TRIGGER
+    2: 0,   # CLEAR
+    3: "Emergency",
+    4: "Emergency alert from Gira HomeServer.",
+    5: "high",
+    6: 0,   # IS_DRILL
+    7: 300, # DURATION_SECONDS
+    8: "https://airtame.cloud/api/v3.0/cloud/public/emergency-alerts",
+    9: "testkey1234567890",
+    10: "gira-hs",
+    11: 5,  # TIMEOUT_SECONDS
+    12: 2,  # MAX_RETRIES
+    13: 0,  # DEBOUNCE_MS (zero so tests don't need fake clocks)
+}
 
-    def __call__(self, method, url, headers, body, timeout):
-        self.calls.append({"body": json.loads(body), "headers": dict(headers)})
+
+class FakeHTTP(object):
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    def __call__(self, url, headers, body, timeout):
+        self.calls.append({"url": url, "headers": dict(headers),
+                           "body": json.loads(body), "timeout": timeout})
         item = self.responses.pop(0)
         if isinstance(item, BaseException):
             raise item
         return item
 
 
-def build_module(transport, **param_overrides):
-    params = ModuleParameters(
-        api_key="testkey1234567890",
-        endpoint="https://airtame.cloud/api/v3.0/cloud/public/emergency-alerts",
-        debounce_seconds=0.0,
-    )
-    for k, v in param_overrides.items():
-        setattr(params, k, v)
-    client = AirtameClient(
-        api_key=params.api_key,
-        endpoint=params.endpoint,
-        timeout_seconds=params.timeout_seconds,
-        max_retries=params.max_retries,
-        retry_backoff_seconds=0.0,
-        transport=transport,
-        sleep=lambda _s: None,
-    )
-    return AirtameEmergencyAlertModule(params=params, client=client)
+def _build(responses):
+    inst = airtame_module.AirtameEmergencyAlert24815(homeserver_context=object())
+    inst.FRAMEWORK.inputs.update(VALID_INPUT_DEFAULTS)
+    inst._http_post = FakeHTTP(responses)
+    inst.on_init()  # establish output defaults like the real HS does
+    return inst
 
 
-def test_rising_trigger_sends_initiated_payload():
-    transport = RecordingTransport([AirtameResponse(200, "{}")])
-    mod = build_module(transport)
-
-    mod.process(ModuleInputs(trigger=False))
-    out = mod.process(
-        ModuleInputs(trigger=True, headline="Fire", description="Evacuate now.")
-    )
-
-    assert out.active is True
-    assert out.success_pulse is True
-    assert out.error_pulse is False
-    assert out.last_status_code == 200
-    assert out.last_alert_id.startswith("gira-hs-")
-
-    body = transport.calls[0]["body"]
-    assert body["status"] == "Initiated"
-    assert body["headline"] == "Fire"
-    assert body["description"] == "Evacuate now."
-    assert body["id"] == out.last_alert_id
+def _fire(inst, index, value):
+    inst.FRAMEWORK.inputs[index] = value
+    inst.on_input_value(index, value)
 
 
-def test_clear_after_trigger_sends_resolved_with_same_id():
-    transport = RecordingTransport(
-        [AirtameResponse(200, "{}"), AirtameResponse(200, "{}")]
-    )
-    mod = build_module(transport)
+def test_rising_trigger_sends_initiated_and_sets_outputs(monkeypatch):
+    monkeypatch.setattr(airtame_module.time, "sleep", lambda _: None)
+    inst = _build([(200, "{}")])
 
-    mod.process(ModuleInputs(trigger=True, headline="h", description="d"))
-    alert_id = mod.outputs.last_alert_id
-    mod.process(ModuleInputs(trigger=False))  # falling edge
-    mod.process(ModuleInputs(clear=False))  # baseline
-    out = mod.process(ModuleInputs(clear=True))
+    _fire(inst, inst.PIN_I_TRIGGER, 0)  # baseline
+    _fire(inst, inst.PIN_I_TRIGGER, 1)  # rising edge
 
-    assert out.active is False
-    assert out.success_pulse is True
-    assert transport.calls[1]["body"] == {"id": alert_id, "status": "Resolved"}
+    fw = inst.FRAMEWORK
+    assert fw.outputs[inst.PIN_O_ACTIVE] == 1
+    assert fw.outputs[inst.PIN_O_LAST_STATUS_CODE] == 200
+    assert fw.outputs[inst.PIN_O_LAST_MESSAGE] == "alert initiated"
+    assert fw.outputs[inst.PIN_O_LAST_ALERT_ID].startswith("gira-hs-")
+    assert fw.remanent[inst.REM_ACTIVE] == 1
+    # success_pulse was set high then low (pulse)
+    pulse_writes = [v for (p, v) in fw.output_history if p == inst.PIN_O_SUCCESS_PULSE]
+    assert pulse_writes[-2:] == [1, 0]
 
-
-def test_held_high_trigger_only_fires_once():
-    transport = RecordingTransport([AirtameResponse(200, "{}")])
-    mod = build_module(transport)
-
-    mod.process(ModuleInputs(trigger=True, headline="h", description="d"))
-    mod.process(ModuleInputs(trigger=True, headline="h", description="d"))
-    mod.process(ModuleInputs(trigger=True, headline="h", description="d"))
-
-    assert len(transport.calls) == 1
+    sent = inst._http_post.calls[0]["body"]
+    assert sent["status"] == "Initiated"
+    assert sent["headline"] == "Emergency"
+    assert sent["template"] == "high"
+    assert sent["id"] == fw.outputs[inst.PIN_O_LAST_ALERT_ID]
 
 
-def test_validation_error_sets_error_output_without_http_call():
-    transport = RecordingTransport([])
-    mod = build_module(transport)
-    # Empty headline overrides the default and fails validation only if both
-    # default and override are blank; force this by emptying the default too.
-    mod.params.default_headline = ""
-    out = mod.process(ModuleInputs(trigger=True, headline=""))
+def test_held_high_trigger_only_fires_once(monkeypatch):
+    monkeypatch.setattr(airtame_module.time, "sleep", lambda _: None)
+    inst = _build([(200, "{}")])
 
-    assert out.error_pulse is True
-    assert out.success_pulse is False
-    assert "headline" in out.last_message
-    assert transport.calls == []
+    _fire(inst, inst.PIN_I_TRIGGER, 1)
+    _fire(inst, inst.PIN_I_TRIGGER, 1)
+    _fire(inst, inst.PIN_I_TRIGGER, 1)
+
+    assert len(inst._http_post.calls) == 1
 
 
-def test_auth_error_surfaces_to_outputs():
-    transport = RecordingTransport([AirtameResponse(401, "bad token")])
-    mod = build_module(transport)
+def test_clear_after_trigger_sends_resolved_with_same_id(monkeypatch):
+    monkeypatch.setattr(airtame_module.time, "sleep", lambda _: None)
+    inst = _build([(200, "{}"), (200, "{}")])
 
-    out = mod.process(ModuleInputs(trigger=True))
+    _fire(inst, inst.PIN_I_TRIGGER, 0)
+    _fire(inst, inst.PIN_I_TRIGGER, 1)
+    alert_id = inst.FRAMEWORK.outputs[inst.PIN_O_LAST_ALERT_ID]
 
-    assert out.error_pulse is True
-    assert out.active is False
-    assert out.last_status_code == 401
-    assert "auth" in out.last_message.lower()
+    _fire(inst, inst.PIN_I_CLEAR, 0)
+    _fire(inst, inst.PIN_I_CLEAR, 1)
 
-
-def test_timeout_surfaces_to_outputs():
-    transport = RecordingTransport(
-        [AirtameTimeoutError("t"), AirtameTimeoutError("t"), AirtameTimeoutError("t")]
-    )
-    mod = build_module(transport)
-
-    out = mod.process(ModuleInputs(trigger=True))
-
-    assert out.error_pulse is True
-    assert out.last_status_code == 0
-    assert "timeout" in out.last_message.lower()
+    assert inst.FRAMEWORK.outputs[inst.PIN_O_ACTIVE] == 0
+    assert inst.FRAMEWORK.outputs[inst.PIN_O_LAST_MESSAGE] == "alert resolved"
+    assert inst._http_post.calls[1]["body"] == {"id": alert_id, "status": "Resolved"}
 
 
-def test_clear_without_active_alert_is_noop():
-    transport = RecordingTransport([])
-    mod = build_module(transport)
-
-    out = mod.process(ModuleInputs(clear=True))
-
-    assert transport.calls == []
-    assert out.success_pulse is False
-    assert out.error_pulse is False
+def test_clear_without_active_alert_is_noop(monkeypatch):
+    monkeypatch.setattr(airtame_module.time, "sleep", lambda _: None)
+    inst = _build([])  # no HTTP responses queued because none should fire
+    _fire(inst, inst.PIN_I_CLEAR, 0)
+    _fire(inst, inst.PIN_I_CLEAR, 1)
+    assert inst._http_post.calls == []
 
 
-def test_secret_not_present_in_outputs():
-    transport = RecordingTransport([AirtameResponse(401, "bearer testkey1234567890 rejected")])
-    mod = build_module(transport)
-    out = mod.process(ModuleInputs(trigger=True))
-    # We intentionally truncate the response body, but also assert we never
-    # echo our own key in any output field.
-    assert "testkey1234567890" not in out.last_alert_id
-    # The server echoed the key (hypothetically) - that is the server's fault,
-    # but our own logs/outputs must not have it independently. We don't put
-    # the Authorization header in outputs, so this passes by construction.
-    assert "Authorization" not in out.last_message
+def test_validation_failure_does_not_call_http(monkeypatch):
+    monkeypatch.setattr(airtame_module.time, "sleep", lambda _: None)
+    inst = _build([])
+    # Force a headline that overruns MAX_HEADLINE_LEN so validation fires
+    # (the bare empty case falls back to "Emergency" via _config's default).
+    inst.FRAMEWORK.inputs[inst.PIN_I_HEADLINE] = "x" * 201
+
+    _fire(inst, inst.PIN_I_TRIGGER, 1)
+
+    assert inst._http_post.calls == []
+    msg = inst.FRAMEWORK.outputs[inst.PIN_O_LAST_MESSAGE]
+    assert "validation" in msg
+    assert "headline exceeds" in msg
+
+
+def test_auth_error_surfaces_to_outputs(monkeypatch):
+    monkeypatch.setattr(airtame_module.time, "sleep", lambda _: None)
+    inst = _build([(401, "bad token")])
+    _fire(inst, inst.PIN_I_TRIGGER, 1)
+
+    fw = inst.FRAMEWORK
+    assert fw.outputs[inst.PIN_O_LAST_STATUS_CODE] == 401
+    assert "auth" in fw.outputs[inst.PIN_O_LAST_MESSAGE].lower()
+    assert fw.outputs[inst.PIN_O_ACTIVE] == 0
+
+
+def test_timeout_surfaces_to_outputs(monkeypatch):
+    monkeypatch.setattr(airtame_module.time, "sleep", lambda _: None)
+    err = airtame_module.URLError("timed out")
+    inst = _build([err, err, err])
+    _fire(inst, inst.PIN_I_TRIGGER, 1)
+
+    fw = inst.FRAMEWORK
+    assert fw.outputs[inst.PIN_O_LAST_STATUS_CODE] == 0
+    assert "timeout" in fw.outputs[inst.PIN_O_LAST_MESSAGE].lower()
+
+
+def test_secret_is_masked_in_logger(monkeypatch):
+    monkeypatch.setattr(airtame_module.time, "sleep", lambda _: None)
+    inst = _build([(200, "{}")])
+    _fire(inst, inst.PIN_I_TRIGGER, 1)
+    flat = " ".join(rec[2] for rec in inst.LOGGER.records)
+    assert VALID_INPUT_DEFAULTS[9] not in flat   # raw key never appears
+    assert "te" in flat and "90" in flat          # masked prefix/suffix do
+
+
+def test_non_https_endpoint_surfaces_config_error(monkeypatch):
+    monkeypatch.setattr(airtame_module.time, "sleep", lambda _: None)
+    inst = _build([])
+    inst.FRAMEWORK.inputs[inst.PIN_I_API_ENDPOINT] = "http://airtame.cloud/x"
+    _fire(inst, inst.PIN_I_TRIGGER, 1)
+    assert inst._http_post.calls == []
+    assert "config" in inst.FRAMEWORK.outputs[inst.PIN_O_LAST_MESSAGE]
+
+
+def test_on_init_restores_active_from_remanent(monkeypatch):
+    inst = _build([])
+    inst.FRAMEWORK.remanent[inst.REM_ACTIVE] = 1
+    inst.FRAMEWORK.remanent[inst.REM_ACTIVE_ALERT_ID] = "prev-alert-7"
+    inst.on_init()
+    assert inst.FRAMEWORK.outputs[inst.PIN_O_ACTIVE] == 1
+    assert inst.FRAMEWORK.outputs[inst.PIN_O_LAST_ALERT_ID] == "prev-alert-7"
