@@ -200,13 +200,24 @@ def test_validate_rejects_bad_inputs():
     cases = [
         (("",  "h", "d", "high",   10), "alert_id"),
         (("i", "",  "d", "high",   10), "headline"),
-        (("i", "h", "",  "high",   10), "description"),
         (("i", "h", "d", "ultra",  10), "template"),
         (("i", "h", "d", "high",   0),  "duration"),
     ]
     for args, needle in cases:
         assert needle in inst._validate(*args)
     assert inst._validate("i", "h", "d", "high", 10) == ""
+    # description is optional per the Airtame payload guidelines.
+    assert inst._validate("i", "h", "", "high", 10) == ""
+
+
+@pytest.mark.parametrize("template", [
+    "high", "medium", "low",
+    "blank", "all-clear", "hold",
+    "secure", "lockdown", "evacuate", "shelter",
+])
+def test_all_airtame_alert_templates_accepted_hsl3(template):
+    inst = hsl3mod.LogicModule(stub.Hsl3())
+    assert inst._validate("i", "h", "d", template, 10) == ""
 
 
 def test_mask_helper():

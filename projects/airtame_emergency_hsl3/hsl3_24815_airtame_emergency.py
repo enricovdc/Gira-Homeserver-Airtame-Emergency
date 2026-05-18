@@ -21,17 +21,31 @@ import time
 import requests
 
 
-ALLOWED_TEMPLATES = ("high", "medium", "low")
+# Airtame AlertTemplate values per the Emergency Alerts payload guidelines.
+# Only the first three are reachable via CAP <urgency>; the SRP templates
+# (secure / lockdown / evacuate / shelter / hold / blank / all-clear) can
+# only be selected by sending JSON. Airtame falls back to "high" if it can't
+# determine the template.
+ALLOWED_TEMPLATES = (
+    "high", "medium", "low",
+    "blank", "all-clear", "hold",
+    "secure", "lockdown", "evacuate", "shelter",
+)
+CAP_REACHABLE_TEMPLATES = ("high", "medium", "low")
 ALLOWED_FORMATS = ("json", "cap")
 MAX_HEADLINE_LEN = 200
 MAX_DESCRIPTION_LEN = 2000
 
-# CAP 1.2 namespace; Airtame validates against the CAP XSD and rejects
-# invalid messages, so the schema and namespace are fixed.
+# CAP 1.2 namespace; Airtame strictly validates messages against the CAP XSD.
 CAP_NS = "urn:oasis:names:tc:emergency:cap:1.2"
-# Airtame derives template selection from CAP <urgency>, NOT <severity>
-# (per the Emergency Alerts payload guidelines docs).
-TEMPLATE_TO_URGENCY = {"high": "Immediate", "medium": "Expected", "low": "Future"}
+# Airtame derives CAP template selection from <urgency> only. SRP templates
+# degrade to the nearest urgency bucket on the CAP wire.
+TEMPLATE_TO_URGENCY = {
+    "high": "Immediate", "lockdown": "Immediate", "evacuate": "Immediate",
+    "shelter": "Immediate", "secure": "Immediate",
+    "medium": "Expected", "hold": "Expected",
+    "low": "Future", "all-clear": "Future", "blank": "Future",
+}
 SEVERITY_DEFAULT = "Severe"
 SEVERITY_DRILL = "Minor"
 
@@ -48,27 +62,30 @@ def _xml_escape(s):
 
 def build_cap_alert(alert_id, sender_id, sent_iso, headline, description,
                     template, is_drill, category, expires_iso):
+    """CAP 1.2 Alert. <event> mirrors Airtame's sample shape (short tag from
+    the template), <status> is Actual (CAP 'Test' would be discarded by
+    recipients; drills are JSON-only)."""
     urgency = TEMPLATE_TO_URGENCY.get(template, "Immediate")
     severity = SEVERITY_DRILL if is_drill else SEVERITY_DEFAULT
-    status = "Test" if is_drill else "Actual"
+    event_short = template.capitalize() if template else "Emergency"
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<alert xmlns="' + CAP_NS + '">'
         '<identifier>' + _xml_escape(alert_id) + '</identifier>'
         '<sender>' + _xml_escape(sender_id) + '</sender>'
         '<sent>' + sent_iso + '</sent>'
-        '<status>' + status + '</status>'
+        '<status>Actual</status>'
         '<msgType>Alert</msgType>'
         '<scope>Public</scope>'
         '<info>'
         '<category>' + _xml_escape(category) + '</category>'
-        '<event>' + _xml_escape(headline) + '</event>'
+        '<event>' + _xml_escape(event_short) + '</event>'
         '<urgency>' + urgency + '</urgency>'
         '<severity>' + severity + '</severity>'
         '<certainty>Observed</certainty>'
         '<senderName>' + _xml_escape(sender_id) + '</senderName>'
         '<headline>' + _xml_escape(headline) + '</headline>'
-        '<description>' + _xml_escape(description) + '</description>'
+        '<description>' + _xml_escape(description or "") + '</description>'
         '<expires>' + expires_iso + '</expires>'
         '</info>'
         '</alert>'
@@ -76,9 +93,12 @@ def build_cap_alert(alert_id, sender_id, sent_iso, headline, description,
 
 
 def build_cap_cancel(cancel_id, sender_id, cancel_sent_iso, original_id,
-                     original_sent_iso, category, is_drill):
-    # CAP cancel: msgType=Cancel + <references>sender,identifier,sent</references>.
-    status = "Test" if is_drill else "Actual"
+                     original_sent_iso, category, is_drill, template="high"):
+    """CAP 1.2 Cancel. Per Airtame's Stop-an-alert sample, the cancel mirrors
+    the original alert's urgency/severity/certainty rather than degrading to
+    Past/Unknown/Unknown."""
+    urgency = TEMPLATE_TO_URGENCY.get(template, "Immediate")
+    severity = SEVERITY_DRILL if is_drill else SEVERITY_DEFAULT
     references = "%s,%s,%s" % (sender_id, original_id, original_sent_iso)
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
@@ -86,16 +106,19 @@ def build_cap_cancel(cancel_id, sender_id, cancel_sent_iso, original_id,
         '<identifier>' + _xml_escape(cancel_id) + '</identifier>'
         '<sender>' + _xml_escape(sender_id) + '</sender>'
         '<sent>' + cancel_sent_iso + '</sent>'
-        '<status>' + status + '</status>'
+        '<status>Actual</status>'
         '<msgType>Cancel</msgType>'
         '<scope>Public</scope>'
         '<references>' + _xml_escape(references) + '</references>'
         '<info>'
         '<category>' + _xml_escape(category) + '</category>'
-        '<event>Emergency cleared</event>'
-        '<urgency>Past</urgency>'
-        '<severity>Unknown</severity>'
-        '<certainty>Unknown</certainty>'
+        '<event></event>'
+        '<urgency>' + urgency + '</urgency>'
+        '<severity>' + severity + '</severity>'
+        '<certainty>Observed</certainty>'
+        '<senderName>' + _xml_escape(sender_id) + '</senderName>'
+        '<headline></headline>'
+        '<description></description>'
         '</info>'
         '</alert>'
     )
@@ -198,14 +221,22 @@ class LogicModule:
 
     def _validate(self, alert_id, headline, description, template, duration,
                   payload_format="json"):
-        if not alert_id:                                return "alert_id is required"
-        if not headline:                                return "headline is required"
-        if not description:                             return "description is required"
-        if len(headline)    > MAX_HEADLINE_LEN:         return "headline exceeds %d characters" % MAX_HEADLINE_LEN
-        if len(description) > MAX_DESCRIPTION_LEN:      return "description exceeds %d characters" % MAX_DESCRIPTION_LEN
-        if template not in ALLOWED_TEMPLATES:           return "template must be one of: high, medium, low"
-        if duration <= 0:                               return "duration_seconds must be > 0"
-        if payload_format not in ALLOWED_FORMATS:       return "payload_format must be one of: json, cap"
+        # Per Airtame payload guidelines, description is optional.
+        if not alert_id:
+            return "alert_id is required"
+        if not headline:
+            return "headline is required"
+        if len(headline) > MAX_HEADLINE_LEN:
+            return "headline exceeds %d characters" % MAX_HEADLINE_LEN
+        if description and len(description) > MAX_DESCRIPTION_LEN:
+            return "description exceeds %d characters" % MAX_DESCRIPTION_LEN
+        if template not in ALLOWED_TEMPLATES:
+            return ("template must be one of: high, medium, low, blank, "
+                    "all-clear, hold, secure, lockdown, evacuate, shelter")
+        if duration <= 0:
+            return "duration_seconds must be > 0"
+        if payload_format not in ALLOWED_FORMATS:
+            return "payload_format must be one of: json, cap"
         return ""
 
     def _iso8601_utc(self, epoch_s):
@@ -371,10 +402,11 @@ class LogicModule:
         if payload_format == "cap":
             cancel_id = self._next_alert_id(prefix + "-cancel")
             sent_iso = self._iso8601_utc(int(time.time()))
+            template = self._cfg("template", "high")
             body = build_cap_cancel(cancel_id, sender_id, sent_iso,
                                     self._active_alert_id,
                                     self._active_sent_ts or "",
-                                    cap_category, is_drill)
+                                    cap_category, is_drill, template)
             content_type = "application/xml"
         else:
             body = self._build_clear_body(self._active_alert_id)

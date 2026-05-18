@@ -47,7 +47,6 @@ def test_clear_payload_shape():
     [
         ({"alert_id": "",  "headline": "h", "description": "d", "template": "high",   "duration": 10}, "alert_id"),
         ({"alert_id": "i", "headline": "",  "description": "d", "template": "high",   "duration": 10}, "headline"),
-        ({"alert_id": "i", "headline": "h", "description": "",  "template": "high",   "duration": 10}, "description"),
         ({"alert_id": "i", "headline": "h", "description": "d", "template": "ultra",  "duration": 10}, "template"),
         ({"alert_id": "i", "headline": "h", "description": "d", "template": "high",   "duration": 0},  "duration"),
         ({"alert_id": "i", "headline": "x" * 201, "description": "d", "template": "high", "duration": 10}, "headline exceeds"),
@@ -58,6 +57,25 @@ def test_validation_rejects(kwargs, needle):
     inst = _make_instance()
     msg = inst._validate(**kwargs)
     assert needle in msg
+
+
+def test_description_is_optional_per_airtame_spec():
+    """Per Airtame Emergency Alerts payload guidelines, description is
+    optional (description? in the JSON schema)."""
+    inst = _make_instance()
+    assert inst._validate("i", "h", "",   "high", 10) == ""
+    assert inst._validate("i", "h", None, "high", 10) == ""
+
+
+@pytest.mark.parametrize("template", [
+    "high", "medium", "low",
+    "blank", "all-clear", "hold",
+    "secure", "lockdown", "evacuate", "shelter",
+])
+def test_all_airtame_alert_templates_accepted(template):
+    """All 10 AlertTemplate values from the docs must pass validation."""
+    inst = _make_instance()
+    assert inst._validate("i", "h", "d", template, 10) == ""
 
 
 def test_validation_accepts_minimal_valid():

@@ -20,30 +20,75 @@ algorithmic behavior is the same.
 ### Payload formats — Airtame Option 1 (CAP) and Option 2 (JSON)
 
 Airtame's [Emergency Alerts payload guidelines](https://help.airtame.com/hc/en-us/articles/28499448688029-Emergency-alerts-integrations-payload-guidelines)
-accept two wire formats on the same endpoint with the same Basic auth:
+accept two wire formats on the same endpoint with the same Basic auth.
+The doc is the source of truth — the implementation follows it
+verbatim and the tests pin every deviation.
 
-* **Option 2 — Airtame JSON** (`Content-Type: application/json`) —
-  `{id, status: "Initiated"|"Resolved", template, headline, description,
-  isDrill, expiresAt}`. Same `id` sent again with `status: "Resolved"`
-  clears the alert. Default in this module.
-* **Option 1 — CAP 1.2 XML** (`Content-Type: application/xml`,
-  namespace `urn:oasis:names:tc:emergency:cap:1.2`) — strictly
-  validated against the CAP XSD by Airtame. Per the Airtame docs,
-  template selection is driven by the CAP `<urgency>` field, so this
-  module maps the `template` input to urgency as:
-  `high → Immediate`, `medium → Expected`, `low → Future`.
-  `<status>` is `Test` when `is_drill=1`, otherwise `Actual`.
-  `<severity>` defaults to `Minor` (drill) / `Severe` (real).
-  Cancellation is a second message with `<msgType>Cancel</msgType>`
-  and `<references>sender,identifier,sent</references>` pointing at
-  the original alert.
+#### Option 2 — Airtame JSON (recommended by the docs)
 
-Select per instance via the `PAYLOAD_FORMAT` input — set it to
-`"json"` (default) or `"cap"` in Experte at module insertion time, or
-drive it from a runtime string. When `cap`, the module also reads
-`SENDER_ID` (for `<sender>` / `<senderName>` / the `<references>`
-prefix) and `CAP_CATEGORY` (for `<info>/<category>`; default
-`Safety`).
+`Content-Type: application/json`. Schema:
+
+```
+id: string;                    // unique value expected
+status: "Initiated" | "Resolved";
+template: AlertTemplate;       // defaults to "high" if Airtame can't determine one
+headline: string;
+description?: string;          // optional
+isDrill?: boolean;             // optional - shows the Drill badge
+expiresAt?: string;            // optional, ISO 8601 with timezone
+```
+
+`AlertTemplate` accepts **all 10** values from the docs:
+`high`, `medium`, `low`, `blank`, `all-clear`, `hold`, `secure`,
+`lockdown`, `evacuate`, `shelter`. The SRP templates (`secure`,
+`lockdown`, `evacuate`, `shelter`, `hold`, plus `all-clear` and `blank`)
+are screen-protocol templates: per the docs *"only the description is
+customizable as the headline is set by the protocol"* — so the
+`HEADLINE` input you provide will be ignored by Airtame on those.
+
+Clearing: send the same `id` with `status: "Resolved"`.
+
+#### Option 1 — CAP 1.2 XML
+
+`Content-Type: application/xml`, namespace
+`urn:oasis:names:tc:emergency:cap:1.2`. Airtame strictly validates
+against the CAP XSD and rejects invalid messages.
+
+Per the Airtame docs: *"For CAP structured messages, we use the
+`<urgency>` field from the XML to define what to choose between high,
+medium and low."* — CAP can only reach those three templates. SRP
+templates require JSON. The module maps the `TEMPLATE` input to
+`<urgency>`:
+
+| `TEMPLATE` input | CAP `<urgency>` | Airtame chooses |
+| --- | --- | --- |
+| `high`, `lockdown`, `evacuate`, `shelter`, `secure` | `Immediate` | high |
+| `medium`, `hold` | `Expected` | medium |
+| `low`, `all-clear`, `blank` | `Future` | low |
+
+Drill alerts in CAP are sent with `<severity>Minor</severity>` (real
+alerts use `Severe`). `<status>` is always `Actual` — CAP `Test`
+status means "recipients must disregard" so Airtame would drop it.
+Drill differentiation in JSON happens via the `isDrill` field; there
+is no equivalent in CAP, so drills don't show the Drill badge when
+sent as CAP.
+
+Cancel: send a fresh message with `<msgType>Cancel</msgType>` and
+`<references>SENDER,ORIGINAL_ID,ORIGINAL_SENT</references>` pointing
+at the alert to stop. Per Airtame's published Stop-an-alert sample,
+the Cancel mirrors the original alert's urgency/severity/certainty
+rather than degrading to `Past/Unknown/Unknown`.
+
+#### Selecting the format
+
+Set the `PAYLOAD_FORMAT` input to `"json"` (default) or `"cap"` in
+Experte at module insertion time, or drive it from a runtime string.
+When `cap`, the module also reads `SENDER_ID` (used for `<sender>`,
+`<senderName>` and the `<references>` prefix) and `CAP_CATEGORY` (for
+`<info>/<category>`; default `Safety`). For CAP-mode cancellation,
+the module persists the original `<sent>` timestamp in the
+`ACTIVE_SENT_TS` remanent variable / store so it survives HS
+restarts.
 
 **LBS number:** `24815` (community third-party range `20000-99999`).
 Placeholder — if publishing, reserve one on
@@ -257,7 +302,7 @@ pip install -r requirements.txt
 pytest -q
 ```
 
-The suite (70 tests across HSL2, HSL3, and the shared CAP payload spec)
+The suite (90 tests across HSL2, HSL3, and the shared CAP payload spec)
 covers:
 
 * Payload shape for `Initiated` and `Resolved`
@@ -269,13 +314,19 @@ covers:
 * End-to-end `on_input_value`: trigger fires once on held-high, clear sends
   Resolve with matching id, validation surfaces to outputs without HTTP,
   auth/timeout errors surface to outputs, `on_init` restores from remanent
+* All 10 Airtame AlertTemplate values accepted (`high`, `medium`,
+  `low`, `blank`, `all-clear`, `hold`, `secure`, `lockdown`, `evacuate`,
+  `shelter`) and description is optional per the docs
 * CAP 1.2 XML payload: correct namespace, required elements
   (`identifier`/`sender`/`sent`/`status`/`msgType`/`scope` plus
   `info`/`category`/`event`/`urgency`/`severity`/`certainty`),
-  template→urgency mapping, drill→Test status + Minor severity,
-  Cancel `<msgType>` + `<references>` pointing at the original,
-  XML special-char escaping, and `application/xml` Content-Type
-  switching when `PAYLOAD_FORMAT=cap`
+  template→urgency mapping (including SRP templates degrading to
+  Immediate/Expected/Future), drill→`<severity>Minor</severity>`
+  while `<status>` stays `Actual`, Cancel mirrors the original
+  alert's urgency/severity/certainty (per the published sample),
+  Cancel `<references>` payload shape, XML special-char escaping,
+  and `application/xml` Content-Type switching when
+  `PAYLOAD_FORMAT=cap`
 
 The tests run on Python 3 against a stub `hsl20_4` (`tests/_hsl20_4_stub.py`)
 that models just enough of `BaseModule` / `_Framework` / `_Logger` for the

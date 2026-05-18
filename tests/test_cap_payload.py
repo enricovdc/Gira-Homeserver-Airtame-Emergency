@@ -110,7 +110,10 @@ def test_template_to_urgency_mapping(cap, template, expected_urgency):
     assert info.find(CAP_NS + "urgency").text == expected_urgency
 
 
-def test_drill_uses_test_status_and_minor_severity(cap):
+def test_drill_keeps_actual_status_and_uses_minor_severity(cap):
+    """Airtame's CAP sample always shows <status>Actual</status>; CAP 'Test'
+    means recipients must disregard. Drill differentiation in CAP comes from
+    <severity>=Minor instead of switching status."""
     extras = ({"duration_s": 60, "category": "Safety",
                "expires_iso": "2026-05-18T08:01:00+00:00"}
               if cap.flavor == "hsl2"
@@ -121,7 +124,7 @@ def test_drill_uses_test_status_and_minor_severity(cap):
         headline="h", description="d", template="high", is_drill=True,
         **extras)
     root = _parse(xml)
-    assert root.find(CAP_NS + "status").text == "Test"
+    assert root.find(CAP_NS + "status").text == "Actual"
     assert root.find(CAP_NS + "info").find(CAP_NS + "severity").text == "Minor"
 
 
@@ -160,26 +163,19 @@ def test_xml_special_chars_in_text_are_escaped(cap):
 # ----- Cancel + <references> ----------------------------------------------
 
 def test_cap_cancel_has_correct_msgtype_and_references(cap):
-    if cap.flavor == "hsl2":
-        xml = cap.build_cancel(
-            cancel_id="cancel-1",
-            sender_id="gira-homeserver",
-            cancel_sent_iso="2026-05-18T08:15:00+00:00",
-            original_id="abc-123",
-            original_sent_iso="2026-05-18T08:00:00+00:00",
-            category="Safety",
-            is_drill=False,
-        )
-    else:
-        xml = cap.build_cancel(
-            cancel_id="cancel-1",
-            sender_id="gira-homeserver",
-            cancel_sent_iso="2026-05-18T08:15:00+00:00",
-            original_id="abc-123",
-            original_sent_iso="2026-05-18T08:00:00+00:00",
-            category="Safety",
-            is_drill=False,
-        )
+    """Airtame's Stop-an-alert sample mirrors the original alert's
+    urgency/severity/certainty (not Past/Unknown/Unknown)."""
+    kw = dict(
+        cancel_id="cancel-1",
+        sender_id="gira-homeserver",
+        cancel_sent_iso="2026-05-18T08:15:00+00:00",
+        original_id="abc-123",
+        original_sent_iso="2026-05-18T08:00:00+00:00",
+        category="Safety",
+        is_drill=False,
+        template="high",
+    )
+    xml = cap.build_cancel(**kw)
     root = _parse(xml)
     assert root.find(CAP_NS + "msgType").text == "Cancel"
     refs = root.find(CAP_NS + "references")
@@ -188,7 +184,9 @@ def test_cap_cancel_has_correct_msgtype_and_references(cap):
     # `sender,identifier,sent` triples. We send exactly one triple.
     assert refs.text == "gira-homeserver,abc-123,2026-05-18T08:00:00+00:00"
     info = root.find(CAP_NS + "info")
-    assert info.find(CAP_NS + "urgency").text == "Past"
+    assert info.find(CAP_NS + "urgency").text == "Immediate"
+    assert info.find(CAP_NS + "severity").text == "Severe"
+    assert info.find(CAP_NS + "certainty").text == "Observed"
 
 
 # ----- End-to-end: HSL3 module sends application/xml for CAP --------------
