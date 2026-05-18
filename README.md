@@ -137,6 +137,28 @@ examples/                                       curl scripts for manual smoke te
 See `docs/inputs_outputs.md` for the full pin contract and
 `docs/deployment.md` for installation.
 
+## Pre-generated `.hsl` artefacts
+
+The deployable `.hsl` files are committed to the repo. Grab the one that
+matches your HomeServer firmware and import it into Experte 4.13:
+
+* HSL2 — [`projects/airtame_emergency/release/24815_AirtameEmergencyAlert.hsl`](projects/airtame_emergency/release/24815_AirtameEmergencyAlert.hsl)
+  (companion debug `.py` next to it under
+  `projects/airtame_emergency/debug/`)
+* HSL3 — [`projects/airtame_emergency_hsl3/24815_airtame_emergency.hsl`](projects/airtame_emergency_hsl3/24815_airtame_emergency.hsl)
+
+Both were produced by `scripts/generate_hsl.sh` running the official
+SDK generators (`HSL2 SDK 2.0.7/framework/generator.pyc` under
+Python 2.7, and `HSL3 SDK 3.0/generator/generator3.cpython-39.pyc`
+under Python 3.9). To regenerate after editing `config.xml`,
+`config_airtame_emergency.json`, or either of the source modules:
+
+```
+GIRA_SDK_DIR=/path/to/Gira_HomeServer_SDK_Doku \
+PYTHON27=python2.7 PYTHON39=python3.9 \
+./scripts/generate_hsl.sh
+```
+
 ## Generating the .hsl
 
 ### HSL3 (SDK 3.0) — `python generator3.cpython-39.pyc --source ...`

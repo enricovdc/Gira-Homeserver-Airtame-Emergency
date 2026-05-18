@@ -33,14 +33,14 @@
       { "type": "string", "identifier": "last_alert_id",     "init_value": "",         "label": "Last alert id" }
     ],
     "stores": [
-      { "identifier": "active",           "init_value": "0" },
-      { "identifier": "active_alert_id",  "init_value": "" },
-      { "identifier": "counter",          "init_value": "0" },
-      { "identifier": "last_trig_val",    "init_value": "0" },
-      { "identifier": "last_trig_ts_ms",  "init_value": "0" },
-      { "identifier": "last_clr_val",     "init_value": "0" },
-      { "identifier": "last_clr_ts_ms",   "init_value": "0" },
-      { "identifier": "active_sent_ts",   "init_value": "" }
+      { "type": "number", "identifier": "active",           "init_value": "0" },
+      { "type": "string", "identifier": "active_alert_id",  "init_value": "" },
+      { "type": "number", "identifier": "counter",          "init_value": "0" },
+      { "type": "number", "identifier": "last_trig_val",    "init_value": "0" },
+      { "type": "number", "identifier": "last_trig_ts_ms",  "init_value": "0" },
+      { "type": "number", "identifier": "last_clr_val",     "init_value": "0" },
+      { "type": "number", "identifier": "last_clr_ts_ms",   "init_value": "0" },
+      { "type": "string", "identifier": "active_sent_ts",   "init_value": "" }
     ],
     "timers": [],
     "scripts": [

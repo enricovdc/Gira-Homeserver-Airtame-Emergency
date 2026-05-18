@@ -27,7 +27,7 @@ except ImportError:
     from urllib.request import Request, urlopen
     from urllib.error import HTTPError, URLError
 
-##!!!!####################################################################################################
+##!!!!##################################################################################################
 #### Own written code can be placed above this commentblock . Do not change or delete commentblock! ####
 ########################################################################################################
 ##** Code created by generator - DO NOT CHANGE! **##
@@ -51,6 +51,9 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
         self.PIN_I_TIMEOUT_SECONDS=11
         self.PIN_I_MAX_RETRIES=12
         self.PIN_I_DEBOUNCE_MS=13
+        self.PIN_I_PAYLOAD_FORMAT=14
+        self.PIN_I_SENDER_ID=15
+        self.PIN_I_CAP_CATEGORY=16
         self.PIN_O_ACTIVE=1
         self.PIN_O_SUCCESS_PULSE=2
         self.PIN_O_ERROR_PULSE=3
@@ -65,13 +68,10 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
         self.REM_LAST_CLR_VAL=6
         self.REM_LAST_CLR_TS_MS=7
         self.REM_ACTIVE_SENT_TS=8
-        self.PIN_I_PAYLOAD_FORMAT=14
-        self.PIN_I_SENDER_ID=15
-        self.PIN_I_CAP_CATEGORY=16
 
 ########################################################################################################
 #### Own written code can be placed after this commentblock . Do not change or delete commentblock! ####
-#################################################################################################!!!##
+###################################################################################################!!!##
 
     # Airtame AlertTemplate values (Emergency Alerts payload guidelines).
     # The first three are also reachable via CAP <urgency>; the rest are

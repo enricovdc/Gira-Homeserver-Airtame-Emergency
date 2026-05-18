@@ -14,5 +14,5 @@ dist/
 build/
 *.hslz
 secrets.local.*
-projects/*/release/
-projects/*/debug/
+# Note: projects/*/release/ and projects/*/debug/ are committed - they are
+# the deployable artefacts. Regenerate them with scripts/generate_hsl.sh.
