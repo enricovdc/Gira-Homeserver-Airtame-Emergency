@@ -66,41 +66,161 @@ See `docs/inputs_outputs.md` for the full pin contract and
 
 ## Generating the .hsl
 
-### HSL3 (SDK 3.0)
+### HSL3 (SDK 3.0) — `python generator3.cpython-39.pyc --source ...`
 
-`HSL3 SDK 3.0/generator/generator3.cpython-39.pyc` consumes the JSON
-config + the script and emits `<id>_<name>.hsl`. The exact CLI shape isn't
-covered here — see the SDK PDFs (`HSL3 SDK 3.0 Doku EN.pdf` /
-`Doku DE.pdf`) for the invocation — but the file pair this repo ships
-already matches the layout of the SDK's `examples/http_request/` module
-(JSON beside the `.py`, `scripts[0].filename` referencing the script).
+Pulled verbatim from `HSL3 SDK 3.0 Doku EN.pdf` (pp. 3, 16-17):
 
-### HSL2 (SDK 2.0.7)
+> The generator is called via the command line with the Python interpreter.
+> `--source` is used to specify the configuration file
+> (default value: `config.xml`).
+> `--target` specifies the target file, which overwrites the configuration
+> file specifications.
+> Optionally, `--debug` enables debug outputs that are disabled by default.
 
-The HSL2 SDK ships two scripts (`framework/create_project.pyc` and
-`framework/generator.pyc`). Workflow:
+#### One-time environment setup (Windows, from the docs)
 
-1. Copy this repo's `projects/airtame_emergency/` directory into the
-   SDK's `projects/` folder, **or** run
-   `python create_project.pyc -p "airtame_emergency"` first and then
-   replace the generated `config.xml` and `src/` with the ones here.
-2. From the framework directory, run:
-   ```
-   python generator.pyc "airtame_emergency" UTF-8
-   ```
-3. The generator writes
-   `projects/airtame_emergency/release/24815_AirtameEmergencyAlert.hsl`
-   (deployable) and `.../debug/24815_AirtameEmergencyAlert.py`
-   (simulator-runnable).
-4. Import the `.hsl` into your Experte 4.13 project as a new logic
-   module ("Logikbaustein"). The class name pattern Experte expects
-   (`<InternalNameCamelCased><id>`) is already produced by the
-   generator from `config.xml`.
+```
+py install 3.9
+cd Projekte
+py -3.9 -m venv hsl3
+cd hsl3
+Scripts\activate
+```
 
-When the generator re-runs on this `src/` file, it preserves user code
-outside the `##!!!!##` ... `##!!!##` sentinel markers and regenerates
-the block in between (pin constants, base-class call) from `config.xml`.
-Don't edit anything between the markers by hand.
+Unzip `hsl3_generator_und_beispiele.zip` from the Experte 4.13 install
+into the `Projekte\hsl3` directory. After this, the `generator/`
+folder contains `generator3.cpython-39.pyc`.
+
+On Linux / macOS the equivalent is:
+
+```
+python3.9 -m venv hsl3 && source hsl3/bin/activate
+pip install requests        # needed by the module, not by the generator
+```
+
+#### Generate the .hsl
+
+From inside this repo:
+
+```
+cd projects/airtame_emergency_hsl3
+python <path-to-SDK>/HSL3\ SDK\ 3.0/generator/generator3.cpython-39.pyc \
+       --source config_airtame_emergency.json \
+       --target 24815_airtame_emergency.hsl \
+       --debug
+```
+
+The generator reads `config_airtame_emergency.json`, picks up
+`hsl3_24815_airtame_emergency.py` (referenced via `scripts[0].filename`),
+and writes `24815_airtame_emergency.hsl` next to the config.
+
+`--target` is optional: if you omit it, the generator uses
+`module.hsl_filename` from the JSON (`24815_airtame_emergency.hsl`),
+so the short form is just:
+
+```
+python <path>/generator3.cpython-39.pyc -s config_airtame_emergency.json
+```
+
+CLI summary (from the docs):
+
+| flag | short | meaning | default |
+| --- | --- | --- | --- |
+| `--source <file>` | `-s` | configuration file | `config.xml` |
+| `--target <file>` | `-t` | output `.hsl` (overrides `hsl_filename` in the config) | from config |
+| `--debug` | `-d` | verbose generator output | off |
+
+#### Import into Experte 4.13
+
+> The generated *.hsl file can then be imported and used with
+> Expert version 4.13.0 and above. (HSL3 SDK Doku EN.pdf, p. 3)
+
+In Experte: File → Import → Logikbaustein → pick the generated
+`24815_airtame_emergency.hsl`. Drop the module onto a logic page; the
+13 inputs / 6 outputs declared in the JSON will be visible.
+
+### HSL2 (SDK 2.0.7) — `python generator.pyc "<project>" <encoding>`
+
+The HSL2 SDK lives at `Gira HomeServer SDK Doku/HSL/HSL2 SDK 2.0.7/`.
+Inside `framework/` you'll find:
+
+```
+framework/
+  create_project.pyc      # scaffolds projects/<name>/{src,release,debug,config.xml}
+  generator.pyc           # turns src/<id>_<name>.py + config.xml -> release/<id>_<name>.hsl
+  hsl20/                  # framework Python modules (hsl20_4.py + helpers)
+  python26/               # bundled Python 2.6 interpreter (Windows install only)
+```
+
+The generator is Python 2.7. On Windows the SDK ships its own bundled
+interpreter; on Linux / macOS, install Python 2.7 yourself (e.g.
+`pyenv install 2.7.18`).
+
+#### Step 1 — drop the project into the SDK
+
+Either:
+
+**a)** Copy this repo's `projects/airtame_emergency/` directory into
+`<SDK>/HSL/HSL2 SDK 2.0.7/framework/projects/`. Final tree:
+
+```
+<SDK>/HSL/HSL2 SDK 2.0.7/framework/projects/airtame_emergency/
+  config.xml
+  src/24815_AirtameEmergencyAlert.py
+```
+
+**b)** Or scaffold first, then overwrite:
+
+```
+cd <SDK>/HSL/HSL2\ SDK\ 2.0.7/framework
+python create_project.pyc -p "airtame_emergency"
+# overwrite the generated config.xml and src/ with the files from this repo
+```
+
+(`create_project.pyc` creates the four sibling folders
+`src/`, `release/`, `debug/` plus a starter `config.xml`.)
+
+#### Step 2 — generate
+
+From the framework directory:
+
+```
+cd <SDK>/HSL/HSL2\ SDK\ 2.0.7/framework
+python generator.pyc "airtame_emergency" UTF-8
+```
+
+CLI: `python generator.pyc <project-folder-name> <source-encoding>`.
+The encoding must match the `# coding:` line at the top of
+`src/24815_AirtameEmergencyAlert.py` — this repo uses **UTF-8**.
+
+#### Step 3 — outputs
+
+The generator writes two files:
+
+```
+projects/airtame_emergency/release/24815_AirtameEmergencyAlert.hsl   <- deployable
+projects/airtame_emergency/debug/24815_AirtameEmergencyAlert.py      <- simulator-runnable
+```
+
+#### Step 4 — import into Experte 4.13
+
+File → Import → Logikbaustein → pick
+`release/24815_AirtameEmergencyAlert.hsl`. Drop the module onto a logic
+page. The 13 inputs and 6 outputs declared in `config.xml` will be
+visible, with their `init_value`s pre-filled.
+
+#### Re-generation hygiene
+
+When the generator re-runs on `src/24815_AirtameEmergencyAlert.py`,
+it preserves user code outside the `##!!!!##` ... `##!!!##` sentinel
+markers and **regenerates the block in between** (pin constants,
+`BaseModule.__init__` call) from `config.xml`. Don't edit anything
+between the markers by hand — your change will be overwritten on the
+next generate.
+
+If you change `config.xml` (rename a pin, add an input, etc.), re-run
+`python generator.pyc "airtame_emergency" UTF-8` and the pin constants
+inside the markers update automatically.
 
 ## Running tests
 
