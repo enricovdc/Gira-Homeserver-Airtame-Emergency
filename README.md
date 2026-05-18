@@ -17,6 +17,34 @@ Two parallel implementations are shipped, one per SDK generation:
 Both implementations produce identical Airtame wire payloads; the
 algorithmic behavior is the same.
 
+### Payload formats — Airtame Option 1 (CAP) and Option 2 (JSON)
+
+Airtame's [Emergency Alerts payload guidelines](https://help.airtame.com/hc/en-us/articles/28499448688029-Emergency-alerts-integrations-payload-guidelines)
+accept two wire formats on the same endpoint with the same Basic auth:
+
+* **Option 2 — Airtame JSON** (`Content-Type: application/json`) —
+  `{id, status: "Initiated"|"Resolved", template, headline, description,
+  isDrill, expiresAt}`. Same `id` sent again with `status: "Resolved"`
+  clears the alert. Default in this module.
+* **Option 1 — CAP 1.2 XML** (`Content-Type: application/xml`,
+  namespace `urn:oasis:names:tc:emergency:cap:1.2`) — strictly
+  validated against the CAP XSD by Airtame. Per the Airtame docs,
+  template selection is driven by the CAP `<urgency>` field, so this
+  module maps the `template` input to urgency as:
+  `high → Immediate`, `medium → Expected`, `low → Future`.
+  `<status>` is `Test` when `is_drill=1`, otherwise `Actual`.
+  `<severity>` defaults to `Minor` (drill) / `Severe` (real).
+  Cancellation is a second message with `<msgType>Cancel</msgType>`
+  and `<references>sender,identifier,sent</references>` pointing at
+  the original alert.
+
+Select per instance via the `PAYLOAD_FORMAT` input — set it to
+`"json"` (default) or `"cap"` in Experte at module insertion time, or
+drive it from a runtime string. When `cap`, the module also reads
+`SENDER_ID` (for `<sender>` / `<senderName>` / the `<references>`
+prefix) and `CAP_CATEGORY` (for `<info>/<category>`; default
+`Safety`).
+
 **LBS number:** `24815` (community third-party range `20000-99999`).
 Placeholder — if publishing, reserve one on
 [hs-help.net](https://hs-help.net/) under "LBS-Nummern Vergabe" and
@@ -229,7 +257,8 @@ pip install -r requirements.txt
 pytest -q
 ```
 
-The suite (47 tests across HSL2 and HSL3) covers:
+The suite (70 tests across HSL2, HSL3, and the shared CAP payload spec)
+covers:
 
 * Payload shape for `Initiated` and `Resolved`
 * Validation: missing / oversized headline / description / bad template / bad duration
@@ -240,6 +269,13 @@ The suite (47 tests across HSL2 and HSL3) covers:
 * End-to-end `on_input_value`: trigger fires once on held-high, clear sends
   Resolve with matching id, validation surfaces to outputs without HTTP,
   auth/timeout errors surface to outputs, `on_init` restores from remanent
+* CAP 1.2 XML payload: correct namespace, required elements
+  (`identifier`/`sender`/`sent`/`status`/`msgType`/`scope` plus
+  `info`/`category`/`event`/`urgency`/`severity`/`certainty`),
+  template→urgency mapping, drill→Test status + Minor severity,
+  Cancel `<msgType>` + `<references>` pointing at the original,
+  XML special-char escaping, and `application/xml` Content-Type
+  switching when `PAYLOAD_FORMAT=cap`
 
 The tests run on Python 3 against a stub `hsl20_4` (`tests/_hsl20_4_stub.py`)
 that models just enough of `BaseModule` / `_Framework` / `_Logger` for the

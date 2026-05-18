@@ -16,6 +16,9 @@
                 <input type="NUMBER" const_name="TIMEOUT_SECONDS"    init_value="10">HTTP timeout in seconds</input>
                 <input type="NUMBER" const_name="MAX_RETRIES"        init_value="2">Max retries on 429 / 5xx / timeout</input>
                 <input type="NUMBER" const_name="DEBOUNCE_MS"        init_value="1000">Minimum interval between accepted rising edges</input>
+                <input type="STRING" const_name="PAYLOAD_FORMAT"     init_value="json">Payload format: "json" (Airtame option 2) or "cap" (Airtame option 1, CAP 1.2 XML)</input>
+                <input type="STRING" const_name="SENDER_ID"          init_value="gira-homeserver">CAP sender id (also used as senderName)</input>
+                <input type="STRING" const_name="CAP_CATEGORY"       init_value="Safety">CAP category: Geo|Met|Safety|Security|Rescue|Fire|Health|Env|Transport|Infra|CBRNE|Other</input>
             </inputs>
             <outputs>
                 <output type="NUMBER" const_name="ACTIVE"           init_value="0">1 while the most recent alert has not been resolved</output>
@@ -33,6 +36,7 @@
                 <remanent_variable type="NUMBER" const_name="LAST_TRIG_TS_MS"  init_value="0">Last accepted trigger edge timestamp (ms)</remanent_variable>
                 <remanent_variable type="NUMBER" const_name="LAST_CLR_VAL"     init_value="0">Last seen clear value (edge detect)</remanent_variable>
                 <remanent_variable type="NUMBER" const_name="LAST_CLR_TS_MS"   init_value="0">Last accepted clear edge timestamp (ms)</remanent_variable>
+                <remanent_variable type="STRING" const_name="ACTIVE_SENT_TS"   init_value="">ISO 8601 sent-time of the active alert (CAP &lt;references&gt; needs this)</remanent_variable>
             </remanent_variables>
             <translations>
                 <translation language="en" name="Airtame Emergency Alert" category="Airtame">
@@ -50,6 +54,9 @@
                         <translation_input>Timeout (s)</translation_input>
                         <translation_input>Max retries</translation_input>
                         <translation_input>Debounce (ms)</translation_input>
+                        <translation_input>Payload format</translation_input>
+                        <translation_input>Sender id (CAP)</translation_input>
+                        <translation_input>CAP category</translation_input>
                     </translation_inputs>
                     <translation_outputs>
                         <translation_output>Active</translation_output>

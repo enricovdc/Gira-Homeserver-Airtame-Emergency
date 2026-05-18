@@ -64,15 +64,26 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
         self.REM_LAST_TRIG_TS_MS=5
         self.REM_LAST_CLR_VAL=6
         self.REM_LAST_CLR_TS_MS=7
-        self.FRAMEWORK._run_in_context_thread(self.on_init)
+        self.REM_ACTIVE_SENT_TS=8
+        self.PIN_I_PAYLOAD_FORMAT=14
+        self.PIN_I_SENDER_ID=15
+        self.PIN_I_CAP_CATEGORY=16
 
 ########################################################################################################
 #### Own written code can be placed after this commentblock . Do not change or delete commentblock! ####
 #################################################################################################!!!##
 
     ALLOWED_TEMPLATES = ("high", "medium", "low")
+    ALLOWED_FORMATS = ("json", "cap")
     MAX_HEADLINE_LEN = 200
     MAX_DESCRIPTION_LEN = 2000
+    CAP_NS = "urn:oasis:names:tc:emergency:cap:1.2"
+    # Airtame derives template selection from CAP <urgency>, not <severity>.
+    # (per the Airtame Emergency Alerts payload guidelines.)
+    TEMPLATE_TO_URGENCY = {"high": "Immediate", "medium": "Expected", "low": "Future"}
+    # CAP severity is still required by the XSD; pick a reasonable default.
+    SEVERITY_DEFAULT = "Severe"
+    SEVERITY_DRILL = "Minor"
 
     def on_init(self):
         active = int(self._get_remanent(self.REM_ACTIVE) or 0)
@@ -128,8 +139,12 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
         timeout = self._pin_int(self.PIN_I_TIMEOUT_SECONDS, 10)
         retries = self._pin_int(self.PIN_I_MAX_RETRIES, 2)
         debounce = self._pin_int(self.PIN_I_DEBOUNCE_MS, 1000)
+        payload_format = (self._pin_str(self.PIN_I_PAYLOAD_FORMAT) or "json").lower()
+        sender_id = self._pin_str(self.PIN_I_SENDER_ID) or "gira-homeserver"
+        cap_category = self._pin_str(self.PIN_I_CAP_CATEGORY) or "Safety"
         return (headline, description, template, is_drill, duration,
-                endpoint, api_key, prefix, timeout, retries, debounce)
+                endpoint, api_key, prefix, timeout, retries, debounce,
+                payload_format, sender_id, cap_category)
 
     # ------- edge detection / debounce ------------------------------------
 
@@ -138,7 +153,8 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
         prev = int(self._get_remanent(prev_rem) or 0)
         self._set_remanent(prev_rem, cur)
         if cur and not prev:
-            (_, _, _, _, _, _, _, _, _, _, debounce_ms) = self._config()
+            cfg = self._config()
+            debounce_ms = cfg[10]
             now_ms = int(time.time() * 1000)
             last_ms = int(self._get_remanent(ts_rem) or 0)
             # last_ms==0 means "never fired"; bypass debounce for the first edge.
@@ -149,7 +165,8 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
 
     # ------- payload + validation -----------------------------------------
 
-    def _validate(self, alert_id, headline, description, template, duration):
+    def _validate(self, alert_id, headline, description, template, duration,
+                  payload_format="json"):
         if not alert_id:
             return "alert_id is required"
         if not headline:
@@ -164,7 +181,78 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
             return "template must be one of: high, medium, low"
         if duration <= 0:
             return "duration_seconds must be > 0"
+        if payload_format not in self.ALLOWED_FORMATS:
+            return "payload_format must be one of: json, cap"
         return ""
+
+    # ------- CAP 1.2 XML payload ------------------------------------------
+
+    def _xml_escape(self, s):
+        # Escape the five XML-reserved characters. ElementTree.tostring would
+        # do this for us, but staying with hand-rolled strings keeps the byte
+        # output deterministic and free of namespace-prefix surprises.
+        if s is None:
+            return ""
+        s = str(s)
+        return (s.replace("&", "&amp;")
+                 .replace("<", "&lt;")
+                 .replace(">", "&gt;")
+                 .replace("\"", "&quot;")
+                 .replace("'", "&apos;"))
+
+    def _build_cap_alert(self, alert_id, sender_id, sent_iso, headline,
+                         description, template, is_drill, duration_s,
+                         category, expires_iso):
+        urgency = self.TEMPLATE_TO_URGENCY.get(template, "Immediate")
+        severity = self.SEVERITY_DRILL if is_drill else self.SEVERITY_DEFAULT
+        status = "Test" if is_drill else "Actual"
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<alert xmlns="' + self.CAP_NS + '">'
+            '<identifier>' + self._xml_escape(alert_id) + '</identifier>'
+            '<sender>' + self._xml_escape(sender_id) + '</sender>'
+            '<sent>' + sent_iso + '</sent>'
+            '<status>' + status + '</status>'
+            '<msgType>Alert</msgType>'
+            '<scope>Public</scope>'
+            '<info>'
+            '<category>' + self._xml_escape(category) + '</category>'
+            '<event>' + self._xml_escape(headline) + '</event>'
+            '<urgency>' + urgency + '</urgency>'
+            '<severity>' + severity + '</severity>'
+            '<certainty>Observed</certainty>'
+            '<senderName>' + self._xml_escape(sender_id) + '</senderName>'
+            '<headline>' + self._xml_escape(headline) + '</headline>'
+            '<description>' + self._xml_escape(description) + '</description>'
+            '<expires>' + expires_iso + '</expires>'
+            '</info>'
+            '</alert>'
+        )
+
+    def _build_cap_cancel(self, cancel_id, sender_id, cancel_sent_iso,
+                          original_id, original_sent_iso, category, is_drill):
+        # CAP cancel: msgType=Cancel + <references>sender,identifier,sent</references>.
+        status = "Test" if is_drill else "Actual"
+        references = "%s,%s,%s" % (sender_id, original_id, original_sent_iso)
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<alert xmlns="' + self.CAP_NS + '">'
+            '<identifier>' + self._xml_escape(cancel_id) + '</identifier>'
+            '<sender>' + self._xml_escape(sender_id) + '</sender>'
+            '<sent>' + cancel_sent_iso + '</sent>'
+            '<status>' + status + '</status>'
+            '<msgType>Cancel</msgType>'
+            '<scope>Public</scope>'
+            '<references>' + self._xml_escape(references) + '</references>'
+            '<info>'
+            '<category>' + self._xml_escape(category) + '</category>'
+            '<event>Emergency cleared</event>'
+            '<urgency>Past</urgency>'
+            '<severity>Unknown</severity>'
+            '<certainty>Unknown</certainty>'
+            '</info>'
+            '</alert>'
+        )
 
     def _iso8601_utc(self, epoch_s):
         return time.strftime("%Y-%m-%dT%H:%M:%S+00:00",
@@ -215,16 +303,18 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
         except HTTPError as e:
             return e.code, e.read().decode("utf-8", "replace")
 
-    def _send(self, body_json, endpoint, api_key, timeout_s, max_retries):
+    def _send(self, body, endpoint, api_key, timeout_s, max_retries,
+              content_type="application/json"):
         if not endpoint.startswith("https://"):
             return 0, "", "config-endpoint"
         if not api_key:
             return 0, "", "config-key"
         headers = {
             "Authorization": self._basic_auth(api_key),
-            "Content-Type": "application/json",
+            "Content-Type": content_type,
             "Accept": "application/json",
         }
+        body_json = body  # name retained for the rest of the method below
         attempt = 0
         backoff = 1.0
         while attempt <= max_retries:
@@ -270,28 +360,45 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
         return "%s-%s-%d" % (prefix, stamp, counter)
 
     def _handle_trigger(self):
+        cfg = self._config()
         (headline, description, template, is_drill, duration,
-         endpoint, api_key, prefix, timeout, retries, _debounce) = self._config()
+         endpoint, api_key, prefix, timeout, retries, _debounce,
+         payload_format, sender_id, cap_category) = cfg
 
         alert_id = self._next_alert_id(prefix)
-        msg = self._validate(alert_id, headline, description, template, duration)
+        msg = self._validate(alert_id, headline, description, template,
+                             duration, payload_format)
         if msg:
             self._fail(0, "validation: " + msg)
             return
 
-        body = self._build_trigger_body(alert_id, headline, description,
-                                        template, is_drill, duration)
-        self.LOGGER.info(0, "[airtame] trigger id=%s key=%s"
-                         % (alert_id, self._mask(api_key)))
-        status, resp, err = self._send(body, endpoint, api_key, timeout, retries)
+        now_s = int(time.time())
+        sent_iso = self._iso8601_utc(now_s)
+        expires_iso = self._iso8601_utc(now_s + int(duration))
+
+        if payload_format == "cap":
+            body = self._build_cap_alert(alert_id, sender_id, sent_iso,
+                                         headline, description, template,
+                                         is_drill, duration, cap_category,
+                                         expires_iso)
+            content_type = "application/xml"
+        else:
+            body = self._build_trigger_body(alert_id, headline, description,
+                                            template, is_drill, duration)
+            content_type = "application/json"
+
+        self.LOGGER.info(0, "[airtame] trigger (%s) id=%s key=%s"
+                         % (payload_format, alert_id, self._mask(api_key)))
+        status, resp, err = self._send(body, endpoint, api_key, timeout,
+                                       retries, content_type=content_type)
         if err == "":
             self._set_remanent(self.REM_ACTIVE, 1)
             self._set_remanent(self.REM_ACTIVE_ALERT_ID, alert_id)
+            self._set_remanent(self.REM_ACTIVE_SENT_TS, sent_iso)
             self._set_output_value(self.PIN_O_ACTIVE, 1)
             self._set_output_value(self.PIN_O_LAST_STATUS_CODE, status)
             self._set_output_value(self.PIN_O_LAST_ALERT_ID, alert_id)
-            self._set_output_value(self.PIN_O_LAST_MESSAGE,
-                                             "alert initiated")
+            self._set_output_value(self.PIN_O_LAST_MESSAGE, "alert initiated")
             self._pulse(self.PIN_O_SUCCESS_PULSE)
         elif err in ("config-endpoint", "config-key"):
             self._fail(0, "config: " + err)
@@ -299,23 +406,37 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
             self._fail(status, "HTTP %d (%s)" % (status, err))
 
     def _handle_clear(self):
-        (_h, _d, _t, _i, _du,
-         endpoint, api_key, _p, timeout, retries, _deb) = self._config()
+        cfg = self._config()
+        (_h, _d, _t, is_drill, _du,
+         endpoint, api_key, prefix, timeout, retries, _deb,
+         payload_format, sender_id, cap_category) = cfg
         active = int(self._get_remanent(self.REM_ACTIVE) or 0)
         alert_id = self._get_remanent(self.REM_ACTIVE_ALERT_ID) or ""
+        original_sent_iso = self._get_remanent(self.REM_ACTIVE_SENT_TS) or ""
         if not active or not alert_id:
             self.LOGGER.info(0, "[airtame] clear ignored (no active alert)")
             return
 
-        body = self._build_clear_body(alert_id)
-        self.LOGGER.info(0, "[airtame] clear id=" + alert_id)
-        status, resp, err = self._send(body, endpoint, api_key, timeout, retries)
+        if payload_format == "cap":
+            cancel_id = self._next_alert_id(prefix + "-cancel")
+            sent_iso = self._iso8601_utc(int(time.time()))
+            body = self._build_cap_cancel(cancel_id, sender_id, sent_iso,
+                                          alert_id, original_sent_iso,
+                                          cap_category, is_drill)
+            content_type = "application/xml"
+        else:
+            body = self._build_clear_body(alert_id)
+            content_type = "application/json"
+
+        self.LOGGER.info(0, "[airtame] clear (%s) id=%s"
+                         % (payload_format, alert_id))
+        status, resp, err = self._send(body, endpoint, api_key, timeout,
+                                       retries, content_type=content_type)
         if err == "":
             self._set_remanent(self.REM_ACTIVE, 0)
             self._set_output_value(self.PIN_O_ACTIVE, 0)
             self._set_output_value(self.PIN_O_LAST_STATUS_CODE, status)
-            self._set_output_value(self.PIN_O_LAST_MESSAGE,
-                                             "alert resolved")
+            self._set_output_value(self.PIN_O_LAST_MESSAGE, "alert resolved")
             self._pulse(self.PIN_O_SUCCESS_PULSE)
         elif err in ("config-endpoint", "config-key"):
             self._fail(0, "config: " + err)

@@ -20,17 +20,22 @@ VALID_INPUT_DEFAULTS = {
     11: 5,  # TIMEOUT_SECONDS
     12: 2,  # MAX_RETRIES
     13: 0,  # DEBOUNCE_MS (zero so tests don't need fake clocks)
+    14: "json",            # PAYLOAD_FORMAT
+    15: "gira-homeserver", # SENDER_ID
+    16: "Safety",          # CAP_CATEGORY
 }
 
 
 class FakeHTTP(object):
-    def __init__(self, responses):
+    def __init__(self, responses, parse_json=True):
         self.responses = list(responses)
         self.calls = []
+        self._parse_json = parse_json
 
     def __call__(self, url, headers, body, timeout):
         self.calls.append({"url": url, "headers": dict(headers),
-                           "body": json.loads(body), "timeout": timeout})
+                           "body": json.loads(body) if self._parse_json else body,
+                           "timeout": timeout})
         item = self.responses.pop(0)
         if isinstance(item, BaseException):
             raise item
@@ -171,3 +176,43 @@ def test_on_init_restores_active_from_remanent(monkeypatch):
     inst.on_init()
     assert inst._output_values[inst.PIN_O_ACTIVE] == 1
     assert inst._output_values[inst.PIN_O_LAST_ALERT_ID] == "prev-alert-7"
+
+
+# ----- HSL2 + CAP format end-to-end ---------------------------------------
+
+def test_cap_format_sends_application_xml_and_persists_sent_ts(monkeypatch):
+    monkeypatch.setattr(airtame_module.time, "sleep", lambda _: None)
+    inst = airtame_module.AirtameEmergencyAlert24815(homeserver_context=object())
+    inst._input_values.update(VALID_INPUT_DEFAULTS)
+    inst._input_values[14] = "cap"  # PAYLOAD_FORMAT
+    inst._http_post = FakeHTTP([(200, "")], parse_json=False)
+    inst.on_init()
+
+    inst.on_input_value(inst.PIN_I_TRIGGER, 1)
+
+    call = inst._http_post.calls[0]
+    assert call["headers"]["Content-Type"] == "application/xml"
+    # ACTIVE_SENT_TS must be persisted so a later CAP Cancel can reference it.
+    sent_ts = inst._remanent_values[inst.REM_ACTIVE_SENT_TS]
+    assert sent_ts and "+00:00" in sent_ts
+
+
+def test_cap_clear_sends_cancel_xml_with_references(monkeypatch):
+    monkeypatch.setattr(airtame_module.time, "sleep", lambda _: None)
+    inst = airtame_module.AirtameEmergencyAlert24815(homeserver_context=object())
+    inst._input_values.update(VALID_INPUT_DEFAULTS)
+    inst._input_values[14] = "cap"
+    inst._http_post = FakeHTTP([(200, ""), (200, "")], parse_json=False)
+    inst.on_init()
+
+    inst.on_input_value(inst.PIN_I_TRIGGER, 1)
+    sent_ts = inst._remanent_values[inst.REM_ACTIVE_SENT_TS]
+    active_id = inst._output_values[inst.PIN_O_LAST_ALERT_ID]
+
+    inst.on_input_value(inst.PIN_I_CLEAR, 1)
+
+    cancel = inst._http_post.calls[1]["body"]
+    assert "<msgType>Cancel</msgType>" in cancel
+    expected_ref = "gira-homeserver,%s,%s" % (active_id, sent_ts)
+    assert "<references>" + expected_ref + "</references>" in cancel
+    assert inst._output_values[inst.PIN_O_ACTIVE] == 0

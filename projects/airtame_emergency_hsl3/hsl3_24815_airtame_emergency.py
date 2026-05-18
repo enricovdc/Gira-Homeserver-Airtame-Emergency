@@ -22,8 +22,83 @@ import requests
 
 
 ALLOWED_TEMPLATES = ("high", "medium", "low")
+ALLOWED_FORMATS = ("json", "cap")
 MAX_HEADLINE_LEN = 200
 MAX_DESCRIPTION_LEN = 2000
+
+# CAP 1.2 namespace; Airtame validates against the CAP XSD and rejects
+# invalid messages, so the schema and namespace are fixed.
+CAP_NS = "urn:oasis:names:tc:emergency:cap:1.2"
+# Airtame derives template selection from CAP <urgency>, NOT <severity>
+# (per the Emergency Alerts payload guidelines docs).
+TEMPLATE_TO_URGENCY = {"high": "Immediate", "medium": "Expected", "low": "Future"}
+SEVERITY_DEFAULT = "Severe"
+SEVERITY_DRILL = "Minor"
+
+
+def _xml_escape(s):
+    if s is None:
+        return ""
+    return (str(s).replace("&", "&amp;")
+                  .replace("<", "&lt;")
+                  .replace(">", "&gt;")
+                  .replace("\"", "&quot;")
+                  .replace("'", "&apos;"))
+
+
+def build_cap_alert(alert_id, sender_id, sent_iso, headline, description,
+                    template, is_drill, category, expires_iso):
+    urgency = TEMPLATE_TO_URGENCY.get(template, "Immediate")
+    severity = SEVERITY_DRILL if is_drill else SEVERITY_DEFAULT
+    status = "Test" if is_drill else "Actual"
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<alert xmlns="' + CAP_NS + '">'
+        '<identifier>' + _xml_escape(alert_id) + '</identifier>'
+        '<sender>' + _xml_escape(sender_id) + '</sender>'
+        '<sent>' + sent_iso + '</sent>'
+        '<status>' + status + '</status>'
+        '<msgType>Alert</msgType>'
+        '<scope>Public</scope>'
+        '<info>'
+        '<category>' + _xml_escape(category) + '</category>'
+        '<event>' + _xml_escape(headline) + '</event>'
+        '<urgency>' + urgency + '</urgency>'
+        '<severity>' + severity + '</severity>'
+        '<certainty>Observed</certainty>'
+        '<senderName>' + _xml_escape(sender_id) + '</senderName>'
+        '<headline>' + _xml_escape(headline) + '</headline>'
+        '<description>' + _xml_escape(description) + '</description>'
+        '<expires>' + expires_iso + '</expires>'
+        '</info>'
+        '</alert>'
+    )
+
+
+def build_cap_cancel(cancel_id, sender_id, cancel_sent_iso, original_id,
+                     original_sent_iso, category, is_drill):
+    # CAP cancel: msgType=Cancel + <references>sender,identifier,sent</references>.
+    status = "Test" if is_drill else "Actual"
+    references = "%s,%s,%s" % (sender_id, original_id, original_sent_iso)
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<alert xmlns="' + CAP_NS + '">'
+        '<identifier>' + _xml_escape(cancel_id) + '</identifier>'
+        '<sender>' + _xml_escape(sender_id) + '</sender>'
+        '<sent>' + cancel_sent_iso + '</sent>'
+        '<status>' + status + '</status>'
+        '<msgType>Cancel</msgType>'
+        '<scope>Public</scope>'
+        '<references>' + _xml_escape(references) + '</references>'
+        '<info>'
+        '<category>' + _xml_escape(category) + '</category>'
+        '<event>Emergency cleared</event>'
+        '<urgency>Past</urgency>'
+        '<severity>Unknown</severity>'
+        '<certainty>Unknown</certainty>'
+        '</info>'
+        '</alert>'
+    )
 
 
 class LogicModule:
@@ -41,6 +116,7 @@ class LogicModule:
         # Active-alert state, also restored from `store`.
         self._active = False
         self._active_alert_id = ""
+        self._active_sent_ts = ""  # ISO 8601, needed for CAP cancel <references>
         # HTTP transport seam - tests monkeypatch this; default uses requests.
         self._send_http = self._send_http_real
 
@@ -53,6 +129,7 @@ class LogicModule:
         try:
             self._active = bool(int(store.value("active") or 0))
             self._active_alert_id = store.value("active_alert_id") or ""
+            self._active_sent_ts = store.value("active_sent_ts") or ""
             self._counter = int(store.value("counter") or 0)
             self._last_trig_val = int(store.value("last_trig_val") or 0)
             self._last_trig_ts_ms = int(store.value("last_trig_ts_ms") or 0)
@@ -119,7 +196,8 @@ class LogicModule:
 
     # ---- payload + validation -------------------------------------------
 
-    def _validate(self, alert_id, headline, description, template, duration):
+    def _validate(self, alert_id, headline, description, template, duration,
+                  payload_format="json"):
         if not alert_id:                                return "alert_id is required"
         if not headline:                                return "headline is required"
         if not description:                             return "description is required"
@@ -127,6 +205,7 @@ class LogicModule:
         if len(description) > MAX_DESCRIPTION_LEN:      return "description exceeds %d characters" % MAX_DESCRIPTION_LEN
         if template not in ALLOWED_TEMPLATES:           return "template must be one of: high, medium, low"
         if duration <= 0:                               return "duration_seconds must be > 0"
+        if payload_format not in ALLOWED_FORMATS:       return "payload_format must be one of: json, cap"
         return ""
 
     def _iso8601_utc(self, epoch_s):
@@ -210,6 +289,9 @@ class LogicModule:
         duration = int(self._cfg("duration_seconds", 300) or 300)
         timeout  = int(self._cfg("timeout_seconds", 10) or 10)
         retries  = int(self._cfg("max_retries", 2) or 2)
+        payload_format = (self._cfg("payload_format", "json") or "json").lower()
+        sender_id    = self._cfg("sender_id", "gira-homeserver")
+        cap_category = self._cfg("cap_category", "Safety")
 
         if not endpoint.startswith("https://"):
             self._fail(0, "config: endpoint must use HTTPS"); return
@@ -217,19 +299,36 @@ class LogicModule:
             self._fail(0, "config: api_key is required"); return
 
         alert_id = self._next_alert_id(prefix)
-        vmsg = self._validate(alert_id, headline, desc, template, duration)
+        vmsg = self._validate(alert_id, headline, desc, template, duration,
+                              payload_format)
         if vmsg:
             self._fail(0, "validation: " + vmsg); return
 
-        body = self._build_trigger_body(alert_id, headline, desc, template,
-                                        is_drill, duration)
+        now_s = int(time.time())
+        sent_iso = self._iso8601_utc(now_s)
+        expires_iso = self._iso8601_utc(now_s + duration)
+
+        if payload_format == "cap":
+            body = build_cap_alert(alert_id, sender_id, sent_iso, headline,
+                                   desc, template, is_drill, cap_category,
+                                   expires_iso)
+            content_type = "application/xml"
+        else:
+            body = self._build_trigger_body(alert_id, headline, desc, template,
+                                            is_drill, duration)
+            content_type = "application/json"
+
         headers = {
             "Authorization": "Basic " + base64.b64encode(
                 ("gira:" + api_key).encode("utf-8")).decode("ascii"),
-            "Content-Type": "application/json",
+            "Content-Type": content_type,
             "Accept": "application/json",
         }
-        self.debug.log("trigger id=%s key=%s" % (alert_id, self._mask(api_key)))
+        # Remember the sent timestamp so a later CAP Cancel can reference it.
+        self._active_sent_ts = sent_iso
+        self.fw.run_in_context(self._persist_store, ("active_sent_ts", sent_iso))
+        self.debug.log("trigger (%s) id=%s key=%s"
+                       % (payload_format, alert_id, self._mask(api_key)))
         threading.Thread(target=self._do_send_trigger,
                          args=(endpoint, headers, body, timeout, retries, alert_id),
                          daemon=True).start()
@@ -261,17 +360,34 @@ class LogicModule:
         api_key  = self._cfg("api_key", "")
         timeout  = int(self._cfg("timeout_seconds", 10) or 10)
         retries  = int(self._cfg("max_retries", 2) or 2)
+        payload_format = (self._cfg("payload_format", "json") or "json").lower()
+        sender_id    = self._cfg("sender_id", "gira-homeserver")
+        cap_category = self._cfg("cap_category", "Safety")
+        is_drill = bool(int(self._cfg("is_drill", 0) or 0))
+        prefix = self._cfg("alert_id_prefix", "gira-hs")
         if not endpoint.startswith("https://") or not api_key:
             self._fail(0, "config: endpoint/api_key invalid"); return
 
-        body = self._build_clear_body(self._active_alert_id)
+        if payload_format == "cap":
+            cancel_id = self._next_alert_id(prefix + "-cancel")
+            sent_iso = self._iso8601_utc(int(time.time()))
+            body = build_cap_cancel(cancel_id, sender_id, sent_iso,
+                                    self._active_alert_id,
+                                    self._active_sent_ts or "",
+                                    cap_category, is_drill)
+            content_type = "application/xml"
+        else:
+            body = self._build_clear_body(self._active_alert_id)
+            content_type = "application/json"
+
         headers = {
             "Authorization": "Basic " + base64.b64encode(
                 ("gira:" + api_key).encode("utf-8")).decode("ascii"),
-            "Content-Type": "application/json",
+            "Content-Type": content_type,
             "Accept": "application/json",
         }
-        self.debug.log("clear id=" + self._active_alert_id)
+        self.debug.log("clear (%s) id=%s"
+                       % (payload_format, self._active_alert_id))
         threading.Thread(target=self._do_send_clear,
                          args=(endpoint, headers, body, timeout, retries),
                          daemon=True).start()

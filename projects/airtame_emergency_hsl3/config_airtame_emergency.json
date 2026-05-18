@@ -19,7 +19,10 @@
       { "type": "string", "identifier": "alert_id_prefix",   "init_value": "gira-hs",  "label": "Alert id prefix" },
       { "type": "number", "identifier": "timeout_seconds",   "init_value": "10",       "label": "HTTP timeout (s)" },
       { "type": "number", "identifier": "max_retries",       "init_value": "2",        "label": "Max retries" },
-      { "type": "number", "identifier": "debounce_ms",       "init_value": "1000",     "label": "Debounce (ms)" }
+      { "type": "number", "identifier": "debounce_ms",       "init_value": "1000",     "label": "Debounce (ms)" },
+      { "type": "string", "identifier": "payload_format",    "init_value": "json",     "label": "Payload format (json | cap)" },
+      { "type": "string", "identifier": "sender_id",         "init_value": "gira-homeserver", "label": "CAP sender id" },
+      { "type": "string", "identifier": "cap_category",      "init_value": "Safety",   "label": "CAP category" }
     ],
     "outputs": [
       { "type": "number", "identifier": "active",            "init_value": "0",        "label": "Active" },
@@ -36,7 +39,8 @@
       { "identifier": "last_trig_val",    "init_value": "0" },
       { "identifier": "last_trig_ts_ms",  "init_value": "0" },
       { "identifier": "last_clr_val",     "init_value": "0" },
-      { "identifier": "last_clr_ts_ms",   "init_value": "0" }
+      { "identifier": "last_clr_ts_ms",   "init_value": "0" },
+      { "identifier": "active_sent_ts",   "init_value": "" }
     ],
     "timers": [],
     "scripts": [
@@ -60,7 +64,10 @@
           { "label": "Alarm-ID-Präfix" },
           { "label": "HTTP-Timeout (s)" },
           { "label": "Max. Wiederholungen" },
-          { "label": "Entprellung (ms)" }
+          { "label": "Entprellung (ms)" },
+          { "label": "Payload-Format (json | cap)" },
+          { "label": "Sender-ID (CAP)" },
+          { "label": "CAP-Kategorie" }
         ],
         "translation_outputs": [
           { "label": "Aktiv" },
