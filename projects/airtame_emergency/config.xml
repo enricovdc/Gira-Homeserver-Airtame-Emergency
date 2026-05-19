@@ -16,7 +16,7 @@
                 <input type="NUMBER" const_name="TIMEOUT_SECONDS"    init_value="10">HTTP timeout in seconds</input>
                 <input type="NUMBER" const_name="MAX_RETRIES"        init_value="2">Max retries on 429 / 5xx / timeout</input>
                 <input type="NUMBER" const_name="DEBOUNCE_MS"        init_value="1000">Minimum interval between accepted rising edges</input>
-                <input type="STRING" const_name="PAYLOAD_FORMAT"     init_value="json">Payload format: json (Airtame option 2) or cap (Airtame option 1, CAP 1.2 XML)</input>
+                <input type="STRING" const_name="PAYLOAD_FORMAT"     init_value="json">Payload format: cap (Airtame option 1, CAP 1.2 XML) or json (Airtame option 2, recommended)</input>
                 <input type="STRING" const_name="SENDER_ID"          init_value="gira-homeserver">CAP sender id (also used as senderName)</input>
                 <input type="STRING" const_name="CAP_CATEGORY"       init_value="Safety">CAP category: Geo, Met, Safety, Security, Rescue, Fire, Health, Env, Transport, Infra, CBRNE, Other</input>
                 <input type="NUMBER" const_name="PROBE_NOW"          init_value="0">Rising edge sends a safe Resolved probe (no emergency on screens) to verify the webhook + API key</input>

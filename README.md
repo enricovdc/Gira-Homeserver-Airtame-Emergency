@@ -54,30 +54,6 @@ accept two wire formats on the same endpoint with the same Basic auth.
 The doc is the source of truth — the implementation follows it
 verbatim and the tests pin every deviation.
 
-#### Option 2 — Airtame JSON (recommended by the docs)
-
-`Content-Type: application/json`. Schema:
-
-```
-id: string;                    // unique value expected
-status: "Initiated" | "Resolved";
-template: AlertTemplate;       // defaults to "high" if Airtame can't determine one
-headline: string;
-description?: string;          // optional
-isDrill?: boolean;             // optional - shows the Drill badge
-expiresAt?: string;            // optional, ISO 8601 with timezone
-```
-
-`AlertTemplate` accepts **all 10** values from the docs:
-`high`, `medium`, `low`, `blank`, `all-clear`, `hold`, `secure`,
-`lockdown`, `evacuate`, `shelter`. The SRP templates (`secure`,
-`lockdown`, `evacuate`, `shelter`, `hold`, plus `all-clear` and `blank`)
-are screen-protocol templates: per the docs *"only the description is
-customizable as the headline is set by the protocol"* — so the
-`HEADLINE` input you provide will be ignored by Airtame on those.
-
-Clearing: send the same `id` with `status: "Resolved"`.
-
 #### Option 1 — CAP 1.2 XML
 
 `Content-Type: application/xml`, namespace
@@ -108,6 +84,30 @@ Cancel: send a fresh message with `<msgType>Cancel</msgType>` and
 at the alert to stop. Per Airtame's published Stop-an-alert sample,
 the Cancel mirrors the original alert's urgency/severity/certainty
 rather than degrading to `Past/Unknown/Unknown`.
+
+#### Option 2 — Airtame JSON (recommended by the docs)
+
+`Content-Type: application/json`. Schema:
+
+```
+id: string;                    // unique value expected
+status: "Initiated" | "Resolved";
+template: AlertTemplate;       // defaults to "high" if Airtame can't determine one
+headline: string;
+description?: string;          // optional
+isDrill?: boolean;             // optional - shows the Drill badge
+expiresAt?: string;            // optional, ISO 8601 with timezone
+```
+
+`AlertTemplate` accepts **all 10** values from the docs:
+`high`, `medium`, `low`, `blank`, `all-clear`, `hold`, `secure`,
+`lockdown`, `evacuate`, `shelter`. The SRP templates (`secure`,
+`lockdown`, `evacuate`, `shelter`, `hold`, plus `all-clear` and `blank`)
+are screen-protocol templates: per the docs *"only the description is
+customizable as the headline is set by the protocol"* — so the
+`HEADLINE` input you provide will be ignored by Airtame on those.
+
+Clearing: send the same `id` with `status: "Resolved"`.
 
 #### Selecting the format
 

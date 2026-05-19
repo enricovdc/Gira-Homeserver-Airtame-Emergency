@@ -21,63 +21,6 @@ documented here.
   Cloud, NOT in the payload. The webhook URL itself encodes which
   screens / device groups will receive the alert.
 
-## Option 2 — Airtame JSON (recommended)
-
-`Content-Type: application/json`. Schema per the official guidelines:
-
-```
-{
-  "id":          string,                  // unique; same id resolves the alert
-  "status":      "Initiated" | "Resolved",
-  "template":    AlertTemplate,           // see below; defaults to "high"
-  "headline":    string,                  // title on screen
-  "description": string?,                 // optional - body text
-  "isDrill":     boolean?,                // optional - shows Drill badge
-  "expiresAt":   string?                  // optional - ISO 8601 w/ timezone
-}
-```
-
-`AlertTemplate` enum:
-
-```
-"high" | "medium" | "low" |
-"blank" | "all-clear" | "hold" |
-"secure" | "lockdown" | "evacuate" | "shelter"
-```
-
-**SRP templates** (the last seven) override the headline with a
-protocol-defined title — only the description remains user-settable.
-
-### Initiate
-
-```
-POST https://airtame.cloud/api/v3.0/cloud/public/emergency-alerts/webhooks/<token>
-Authorization: Basic base64("gira:<api-key>")
-Content-Type:  application/json
-
-{
-  "id": "gira-hs-20260518T080000Z-42",
-  "status": "Initiated",
-  "template": "high",
-  "headline": "Lockdown in effect",
-  "description": "Please remain indoors and secure all entries.",
-  "isDrill": false,
-  "expiresAt": "2026-05-18T08:10:00+00:00"
-}
-```
-
-### Resolve
-
-```
-POST https://airtame.cloud/api/v3.0/cloud/public/emergency-alerts/webhooks/<token>
-Authorization: Basic base64("gira:<api-key>")
-Content-Type:  application/json
-
-{ "id": "gira-hs-20260518T080000Z-42", "status": "Resolved" }
-```
-
-The `id` of a Resolve must match the `id` of the matching Initiate.
-
 ## Option 1 — CAP 1.2 XML
 
 `Content-Type: application/xml`. Airtame strictly validates against
@@ -179,6 +122,63 @@ the reference survives a HomeServer restart.
 Cancel mirrors the original alert's urgency / severity / certainty per
 Airtame's published sample — not the canonical CAP
 "Past / Unknown / Unknown" you'd see in pure-CAP setups.
+
+## Option 2 — Airtame JSON (recommended)
+
+`Content-Type: application/json`. Schema per the official guidelines:
+
+```
+{
+  "id":          string,                  // unique; same id resolves the alert
+  "status":      "Initiated" | "Resolved",
+  "template":    AlertTemplate,           // see below; defaults to "high"
+  "headline":    string,                  // title on screen
+  "description": string?,                 // optional - body text
+  "isDrill":     boolean?,                // optional - shows Drill badge
+  "expiresAt":   string?                  // optional - ISO 8601 w/ timezone
+}
+```
+
+`AlertTemplate` enum:
+
+```
+"high" | "medium" | "low" |
+"blank" | "all-clear" | "hold" |
+"secure" | "lockdown" | "evacuate" | "shelter"
+```
+
+**SRP templates** (the last seven) override the headline with a
+protocol-defined title — only the description remains user-settable.
+
+### Initiate
+
+```
+POST https://airtame.cloud/api/v3.0/cloud/public/emergency-alerts/webhooks/<token>
+Authorization: Basic base64("gira:<api-key>")
+Content-Type:  application/json
+
+{
+  "id": "gira-hs-20260518T080000Z-42",
+  "status": "Initiated",
+  "template": "high",
+  "headline": "Lockdown in effect",
+  "description": "Please remain indoors and secure all entries.",
+  "isDrill": false,
+  "expiresAt": "2026-05-18T08:10:00+00:00"
+}
+```
+
+### Resolve
+
+```
+POST https://airtame.cloud/api/v3.0/cloud/public/emergency-alerts/webhooks/<token>
+Authorization: Basic base64("gira:<api-key>")
+Content-Type:  application/json
+
+{ "id": "gira-hs-20260518T080000Z-42", "status": "Resolved" }
+```
+
+The `id` of a Resolve must match the `id` of the matching Initiate.
 
 ## Response & error handling
 

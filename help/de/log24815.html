@@ -33,8 +33,8 @@
                     eine steigende Flanke am Eingang <i>Aufheben</i> sendet eine <b>Resolved</b>-Nachricht, die auf den aktiven Alarm verweist.<br>
                     Beide Airtame-Payload-Formate werden unterstützt und sind pro Instanz über den Eingang <i>Payload-Format</i> wählbar:
                     <ul>
-                        <li><b>json</b> &mdash; Airtame Option&nbsp;2 (in der Doku empfohlen), <code>Content-Type: application/json</code>.</li>
                         <li><b>cap</b> &mdash; Airtame Option&nbsp;1 (CAP 1.2 XML), <code>Content-Type: application/xml</code>, strikt gegen das CAP-XSD validiert.</li>
+                        <li><b>json</b> &mdash; Airtame Option&nbsp;2 (in der Doku empfohlen), <code>Content-Type: application/json</code>.</li>
                     </ul>
                     Authentifizierung erfolgt per HTTP-Basic mit dem konfigurierten API-Schlüssel. Bei <code>429</code> / <code>5xx</code> / Timeouts wird mit exponentiellem Backoff wiederholt.
                     Der Remanentspeicher trägt den aktiven Alarm über einen HomeServer-Neustart hinweg.
@@ -74,7 +74,7 @@
                     <tr><td class="io-nr input center">11</td> <td class="io-name">E11 HTTP-Timeout (s)</td>               <td class="io-init center">10</td>    <td class="io-descr"><div class="descr">Timeout pro HTTP-Anfrage in Sekunden.</div></td></tr>
                     <tr><td class="io-nr input center">12</td> <td class="io-name">E12 Max. Wiederholungen</td>           <td class="io-init center">2</td>     <td class="io-descr"><div class="descr">Wiederholungen bei <code>429</code>, <code>5xx</code> und Timeouts mit exponentiellem Backoff (1, 2, 4&hellip;&nbsp;s).</div></td></tr>
                     <tr><td class="io-nr input center">13</td> <td class="io-name">E13 Entprellung (ms)</td>              <td class="io-init center">1000</td>  <td class="io-descr"><div class="descr">Minimaler Abstand zwischen akzeptierten steigenden Flanken an <i>Auslöser</i> oder <i>Aufheben</i>.</div></td></tr>
-                    <tr><td class="io-nr input center">14</td> <td class="io-name">E14 Payload-Format</td>                <td class="io-init string center">&quot;json&quot;</td>      <td class="io-descr"><div class="descr"><code>json</code> = Airtame Option&nbsp;2, <code>cap</code> = Airtame Option&nbsp;1 (CAP 1.2 XML).</div></td></tr>
+                    <tr><td class="io-nr input center">14</td> <td class="io-name">E14 Payload-Format</td>                <td class="io-init string center">&quot;json&quot;</td>      <td class="io-descr"><div class="descr"><code>cap</code> = Airtame Option&nbsp;1 (CAP 1.2 XML), <code>json</code> = Airtame Option&nbsp;2 (empfohlen).</div></td></tr>
                     <tr><td class="io-nr input center">15</td> <td class="io-name">E15 Sender-ID (CAP)</td>               <td class="io-init string center">&quot;gira-homeserver&quot;</td><td class="io-descr"><div class="descr">Nur CAP. Wird für <code>&lt;sender&gt;</code>, <code>&lt;senderName&gt;</code> und als Präfix in <code>&lt;references&gt;</code> beim Cancel verwendet.</div></td></tr>
                     <tr><td class="io-nr input center">16</td> <td class="io-name">E16 CAP-Kategorie</td>                 <td class="io-init string center">&quot;Safety&quot;</td>     <td class="io-descr"><div class="descr">Nur CAP. Eine von Geo, Met, Safety, Security, Rescue, Fire, Health, Env, Transport, Infra, CBRNE, Other.</div></td></tr>
                     <tr><td class="io-nr input center">17</td> <td class="io-name">E17 Test jetzt</td>                    <td class="io-init center">0</td>     <td class="io-descr"><div class="descr">Steigende Flanke sendet ein <b>Resolved</b> mit einer Einweg-ID <code>&lt;Präfix&gt;-probe-&lt;UTC&gt;</code>. Pr&uuml;ft Erreichbarkeit der Webhook-URL und G&uuml;ltigkeit des API-Schl&uuml;ssels &mdash; ohne Anzeige auf Airtame-Bildschirmen. Per KNX-Taster (manueller Test) oder per Zeitschalter-Baustein (zyklisch) ansteuern. Sendet immer JSON, unabh&auml;ngig vom Eingang <i>Payload-Format</i>.</div></td></tr>
@@ -114,19 +114,6 @@
                 <div class="descr">
                     Beide Formate sprechen denselben Endpunkt mit derselben Basic-Auth-Header an &mdash; nur Content-Type und Body unterscheiden sich.
                 </div>
-                <div class="descr"><b>JSON (Option 2)</b> &mdash; <code>Content-Type: application/json</code>:</div>
-                <div class="xhtml">
-                    <table>
-                        <tr><th>Feld</th><th>Pflicht</th><th>Hinweis</th></tr>
-                        <tr><td><code>id</code></td>          <td>ja</td><td>eindeutig pro Alarm; gleiche ID hebt den Alarm auf.</td></tr>
-                        <tr><td><code>status</code></td>      <td>ja</td><td><code>Initiated</code> | <code>Resolved</code></td></tr>
-                        <tr><td><code>template</code></td>    <td>ja</td><td>siehe Tabelle unten</td></tr>
-                        <tr><td><code>headline</code></td>    <td>ja</td><td>Titel auf dem Bildschirm</td></tr>
-                        <tr><td><code>description</code></td> <td>nein</td><td>Textkörper auf dem Bildschirm</td></tr>
-                        <tr><td><code>isDrill</code></td>     <td>nein</td><td>Boolean; zeigt Drill-Abzeichen</td></tr>
-                        <tr><td><code>expiresAt</code></td>   <td>nein</td><td>ISO 8601 mit Zeitzone</td></tr>
-                    </table>
-                </div>
                 <div class="descr"><b>CAP 1.2 XML (Option 1)</b> &mdash; <code>Content-Type: application/xml</code>, Namespace <code>urn:oasis:names:tc:emergency:cap:1.2</code>. Cancel verwendet <code>&lt;msgType&gt;Cancel&lt;/msgType&gt;</code> + <code>&lt;references&gt;sender,identifier,sent&lt;/references&gt;</code> mit Verweis auf den Original-Alarm. Airtame leitet die Vorlage aus <code>&lt;urgency&gt;</code> ab:</div>
                 <div class="xhtml">
                     <table>
@@ -134,6 +121,19 @@
                         <tr><td>high, lockdown, evacuate, shelter, secure</td><td>Immediate</td><td>high</td></tr>
                         <tr><td>medium, hold</td>                              <td>Expected</td> <td>medium</td></tr>
                         <tr><td>low, all-clear, blank</td>                     <td>Future</td>   <td>low</td></tr>
+                    </table>
+                </div>
+                <div class="descr"><b>JSON (Option 2, empfohlen)</b> &mdash; <code>Content-Type: application/json</code>:</div>
+                <div class="xhtml">
+                    <table>
+                        <tr><th>Feld</th><th>Pflicht</th><th>Hinweis</th></tr>
+                        <tr><td><code>id</code></td>          <td>ja</td><td>eindeutig pro Alarm; gleiche ID hebt den Alarm auf.</td></tr>
+                        <tr><td><code>status</code></td>      <td>ja</td><td><code>Initiated</code> | <code>Resolved</code></td></tr>
+                        <tr><td><code>template</code></td>    <td>ja</td><td>siehe Tabelle oben</td></tr>
+                        <tr><td><code>headline</code></td>    <td>ja</td><td>Titel auf dem Bildschirm</td></tr>
+                        <tr><td><code>description</code></td> <td>nein</td><td>Textkörper auf dem Bildschirm</td></tr>
+                        <tr><td><code>isDrill</code></td>     <td>nein</td><td>Boolean; zeigt Drill-Abzeichen</td></tr>
+                        <tr><td><code>expiresAt</code></td>   <td>nein</td><td>ISO 8601 mit Zeitzone</td></tr>
                     </table>
                 </div>
                 <div class="alert-box ibox-hint">
