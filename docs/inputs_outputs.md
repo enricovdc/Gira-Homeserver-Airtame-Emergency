@@ -8,6 +8,10 @@ the `##!!!!##` and `##!!!##` markers.
 Pin indices below match what the generator assigns from the order of
 elements in `config.xml`.
 
+For how to bind these pins to KNX group addresses (DPTs, the 14-byte
+string-limit gotcha, worked wiring patterns), see
+[`KNX-MAPPING.md`](KNX-MAPPING.md).
+
 ## Inputs
 
 In HSL2 there is no separate "parameter" concept — every configurable
