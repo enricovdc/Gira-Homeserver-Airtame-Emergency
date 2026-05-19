@@ -4,6 +4,31 @@ A Gira HomeServer logic module that triggers and clears
 [Airtame Emergency Alerts](https://help.airtame.com/hc/en-us/articles/28499448688029-Emergency-alerts-integrations-payload-guidelines)
 from KNX / Gira events.
 
+## Quick start
+
+* **Deploying as-is:** grab the right `.hslz` for your firmware
+  (HSL2 or HSL3, see [Pre-generated artefacts](#pre-generated-artefacts)
+  below), import via Experte → *Logikbausteine → Importieren*, and
+  set the `API_ENDPOINT` + `API_KEY` inputs to the values from your
+  Airtame Cloud integration page.
+* **Developing locally:** `make install-deps && make test`
+  (98 tests, no SDK required).
+* **Regenerating after edits:**
+  `GIRA_SDK_DIR=… PYTHON27=… PYTHON39=… make build`.
+
+## Documentation map
+
+| File | What's inside |
+| --- | --- |
+| `README.md` (this file) | Quick start, layout, build/run, troubleshooting. |
+| [`docs/AIRTAME_API.md`](docs/AIRTAME_API.md) | Wire-protocol reference for JSON + CAP, with sample bodies and error semantics. |
+| [`docs/inputs_outputs.md`](docs/inputs_outputs.md) | Pin contract — every input, output, store, and remanent variable with init value and behaviour. |
+| [`docs/deployment.md`](docs/deployment.md) | Step-by-step `.hsl` generation for HSL2 and HSL3 (CLI invocations from the SDK PDF). |
+| [`docs/LESSONS_LEARNED.md`](docs/LESSONS_LEARNED.md) | Patterns, pitfalls, and tooling notes from building this module. |
+| [`CHANGELOG.md`](CHANGELOG.md) | Versioned change log. |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Repo conventions and the dev loop. |
+| [`Makefile`](Makefile) | `make test / build / verify / clean` entry points. |
+
 Two parallel implementations are shipped, one per SDK generation:
 
 * **HSL2 SDK 2.0.7** (`hsl20_4` framework, Python 2.7, `.py` subclass of
