@@ -216,13 +216,13 @@ class LogicModule:
     # ---- low-level container helpers ------------------------------------
 
     def _iv(self, inputs, name):
-        return inputs.value(self._in_key[name])
+        return _to_str(inputs.value(self._in_key[name]))
 
     def _ic(self, inputs, name):
         return inputs.changed(self._in_key[name])
 
     def _sv(self, store, name):
-        return store.value(self._st_key[name])
+        return _to_str(store.value(self._st_key[name]))
 
     def _set_output(self, name, value):
         self.fw.set_output(self._out_key[name], value)
@@ -273,10 +273,13 @@ class LogicModule:
     def _snap_from(self, inputs):
         # Key the snapshot by lowercase logical name (canonical inside the
         # module), pulling values via the resolved-form keys.
+        # HS3 returns string inputs as iso-8859-15 BYTES (mirroring the
+        # output convention); decode here so the rest of the module can
+        # use str.startswith / len / etc. uniformly.
         self._snap = {}
         for name in self.INPUT_NAMES:
             try:
-                self._snap[name] = inputs.value(self._in_key[name])
+                self._snap[name] = _to_str(inputs.value(self._in_key[name]))
             except Exception:
                 self._snap[name] = None
 
@@ -577,3 +580,15 @@ def _enc(s):
     if isinstance(s, bytes):
         return s
     return s.encode("iso-8859-15", "replace")
+
+
+def _to_str(v):
+    """HS3 returns string inputs/stores as iso-8859-15 bytes. Decode to
+    str so downstream code can use str-only operations (startswith, len,
+    .lower(), format %s without a `b''` literal sneaking in)."""
+    if isinstance(v, bytes):
+        try:
+            return v.decode("iso-8859-15")
+        except Exception:
+            return v.decode("iso-8859-15", "replace")
+    return v

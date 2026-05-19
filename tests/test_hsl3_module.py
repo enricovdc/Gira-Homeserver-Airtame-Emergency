@@ -226,3 +226,50 @@ def test_mask_helper():
     assert inst._mask("ab") == "**"
     assert inst._mask("abcdefgh") == "ab****gh"
     assert "k" * 32 != inst._mask("k" * 32)
+
+
+def test_string_inputs_are_decoded_when_framework_returns_bytes():
+    """Regression: at least one HS firmware returns string inputs as
+    iso-8859-15 bytes (mirroring how the framework requires bytes for
+    string OUTPUTS). The module must decode them before doing str
+    operations like endpoint.startswith('https://')."""
+    hsl3 = stub.Hsl3()
+    inst = hsl3mod.LogicModule(hsl3)
+    calls = []
+    def _err_for(s):
+        if 200 <= s < 300: return ""
+        if s in (401, 403): return "auth"
+        if s == 429: return "rate-limit"
+        if 500 <= s < 600: return "server"
+        return "transport"
+    def fake_send(url, headers, body, timeout, max_retries):
+        calls.append({"url": url, "body": body})
+        return 200, "", _err_for(200)
+    inst._send_http = fake_send
+
+    # Pass every string field as bytes - mirror real firmware behavior.
+    inputs = stub.make_inputs(
+        trigger=0, clear=0,
+        headline=b"Lockdown",
+        description=b"Shelter in place.",
+        template=b"high",
+        is_drill=0,
+        duration_seconds=300,
+        api_endpoint=b"https://airtame.cloud/api/v3.0/cloud/public/emergency-alerts/webhooks/abc",
+        api_key=b"key-bytes-1234567890",
+        alert_id_prefix=b"gira-hs",
+        timeout_seconds=5, max_retries=2, debounce_ms=0,
+        payload_format=b"json",
+        sender_id=b"gira-homeserver",
+        cap_category=b"Safety",
+    )
+    inst.on_init(inputs, stub.make_store())
+    inputs._clear_changed()
+    inputs._set("trigger", 1, mark_changed=True)
+    inst.on_calc(inputs)
+
+    # No TypeError on .startswith("https://"); request actually fired.
+    assert len(calls) == 1
+    body = calls[0]["body"]
+    assert "Lockdown" in body
+    assert hsl3.outputs["active"] == 1.0
