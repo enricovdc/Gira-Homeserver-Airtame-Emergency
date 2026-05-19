@@ -11,6 +11,10 @@ from KNX / Gira events.
   below), import via Experte → *Logikbausteine → Importieren*, and
   set the `API_ENDPOINT` + `API_KEY` inputs to the values from your
   Airtame Cloud integration page.
+* **Wiring to KNX:** see [`docs/KNX-MAPPING.md`](docs/KNX-MAPPING.md)
+  for which pins to bind to which DPTs, the 14-byte string-limit
+  gotcha, and worked wiring patterns (lockdown switch, periodic
+  probe, push-notification on result).
 * **Developing locally:** `make install-deps && make test`
   (98 tests, no SDK required).
 * **Regenerating after edits:**
@@ -23,6 +27,7 @@ from KNX / Gira events.
 | `README.md` (this file) | Quick start, layout, build/run, troubleshooting. |
 | [`docs/AIRTAME_API.md`](docs/AIRTAME_API.md) | Wire-protocol reference for JSON + CAP, with sample bodies and error semantics. |
 | [`docs/inputs_outputs.md`](docs/inputs_outputs.md) | Pin contract — every input, output, store, and remanent variable with init value and behaviour. |
+| [`docs/KNX-MAPPING.md`](docs/KNX-MAPPING.md) | KNX datatypes (DPTs), the 14-byte string limit, common wiring patterns (manual switch, alarm bus, probe scheduler, push-notification), and group-address conventions. |
 | [`docs/deployment.md`](docs/deployment.md) | Step-by-step `.hsl` generation for HSL2 and HSL3 (CLI invocations from the SDK PDF). |
 | [`docs/LESSONS_LEARNED.md`](docs/LESSONS_LEARNED.md) | Patterns, pitfalls, and tooling notes from building this module. |
 | [`CHANGELOG.md`](CHANGELOG.md) | Versioned change log. |

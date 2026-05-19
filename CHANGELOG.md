@@ -15,6 +15,11 @@ loosely follows [Keep a Changelog](https://keepachangelog.com/).
   permanent dashboard indicator that the integration is healthy.
   Probe forces JSON regardless of `PAYLOAD_FORMAT`. Symmetric across
   HSL2 (1 input + 2 outputs + 3 remanents) and HSL3 (same).
+- `docs/KNX-MAPPING.md` documenting DPTs for each pin, the 14-byte
+  KNX string limit and its workarounds, common wiring patterns
+  (manual lockdown switch, alarm-bus integration, periodic probe,
+  push-notification gateway), a suggested group-address scheme,
+  monitor-view smoke-test procedure, and KNX-side troubleshooting.
 - `Makefile` with `make test / build / verify / clean` for one-command
   workflows.
 - `docs/AIRTAME_API.md` summarising the wire protocol (JSON + CAP),
