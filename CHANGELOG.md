@@ -6,6 +6,15 @@ loosely follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Safe probe (`PROBE_NOW` input + `LIVENESS` / `LAST_PROBE_STATUS_CODE`
+  outputs).** Rising edge POSTs a `Resolved` with a throwaway
+  `<prefix>-probe-<UTC>` id; Airtame parses and authenticates the
+  request, then silently accepts (no matching alert to resolve) so
+  **nothing appears on screens**. Outputs `LIVENESS` (1 on 2xx,
+  persisted across HS restart) and `LAST_PROBE_STATUS_CODE` give a
+  permanent dashboard indicator that the integration is healthy.
+  Probe forces JSON regardless of `PAYLOAD_FORMAT`. Symmetric across
+  HSL2 (1 input + 2 outputs + 3 remanents) and HSL3 (same).
 - `Makefile` with `make test / build / verify / clean` for one-command
   workflows.
 - `docs/AIRTAME_API.md` summarising the wire protocol (JSON + CAP),
@@ -15,6 +24,12 @@ loosely follows [Keep a Changelog](https://keepachangelog.com/).
   uncovered during development (mirrors the Gira-logic skill content).
 - README "Troubleshooting" section listing the real bugs encountered
   with their fixes.
+
+### Tests
+- 7 new tests pinning probe behaviour: Resolved (never Initiated) with
+  `-probe-` id pattern, `LIVENESS` lights on 2xx, clears on 401,
+  forces JSON in CAP mode, restores from store on `on_init`. 105
+  tests total.
 
 ## [0.1.0] — Initial deliverable
 

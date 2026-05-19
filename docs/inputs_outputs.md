@@ -30,6 +30,7 @@ runtime objects to it.
 | 11 | `TIMEOUT_SECONDS`    | NUMBER | `10`    | Per-request HTTP timeout. |
 | 12 | `MAX_RETRIES`        | NUMBER | `2`     | Retries on `429`, `5xx`, and timeouts (exp backoff). |
 | 13 | `DEBOUNCE_MS`        | NUMBER | `1000`  | Minimum interval between accepted rising edges. |
+| 17 | `PROBE_NOW`          | NUMBER | `0`     | Rising edge sends a safe probe (Resolved with throwaway id). Does not initiate any alert on screens. JSON only. |
 
 ## Outputs
 
@@ -41,6 +42,8 @@ runtime objects to it.
 | 4 | `LAST_STATUS_CODE` | NUMBER | `0`  | HTTP status of the last request. `0` for transport errors / timeouts / config errors. |
 | 5 | `LAST_MESSAGE`     | STRING | `""` | Short result string. Examples: `alert initiated`, `alert resolved`, `validation: …`, `HTTP <n> (auth\|rate-limit\|timeout\|server\|transport)`, `config: …`. |
 | 6 | `LAST_ALERT_ID`    | STRING | `""` | ID of the most recent `Initiated` alert (kept after Resolve for diagnostics). |
+| 7 | `LIVENESS`         | NUMBER | `0`  | `1` if the most recent probe got a 2xx response, else `0`. Persists across HS restart. |
+| 8 | `LAST_PROBE_STATUS_CODE` | NUMBER | `0` | HTTP status of the last probe (`0` for transport error / timeout). |
 
 ## Remanent variables
 

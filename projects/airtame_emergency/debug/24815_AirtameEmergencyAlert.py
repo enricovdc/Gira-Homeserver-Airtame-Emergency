@@ -497,12 +497,15 @@ except NameError:
             self.PIN_I_PAYLOAD_FORMAT=14
             self.PIN_I_SENDER_ID=15
             self.PIN_I_CAP_CATEGORY=16
+            self.PIN_I_PROBE_NOW=17
             self.PIN_O_ACTIVE=1
             self.PIN_O_SUCCESS_PULSE=2
             self.PIN_O_ERROR_PULSE=3
             self.PIN_O_LAST_STATUS_CODE=4
             self.PIN_O_LAST_MESSAGE=5
             self.PIN_O_LAST_ALERT_ID=6
+            self.PIN_O_LIVENESS=7
+            self.PIN_O_LAST_PROBE_STATUS_CODE=8
             self.REM_ACTIVE=1
             self.REM_ACTIVE_ALERT_ID=2
             self.REM_COUNTER=3
@@ -511,6 +514,9 @@ except NameError:
             self.REM_LAST_CLR_VAL=6
             self.REM_LAST_CLR_TS_MS=7
             self.REM_ACTIVE_SENT_TS=8
+            self.REM_LAST_PROBE_VAL=9
+            self.REM_LAST_PROBE_TS_MS=10
+            self.REM_LIVENESS=11
         ALLOWED_TEMPLATES = (
             "high", "medium", "low",
             "blank", "all-clear", "hold",
@@ -540,6 +546,9 @@ except NameError:
                 self.PIN_O_LAST_ALERT_ID,
                 self._get_remanent(self.REM_ACTIVE_ALERT_ID) or "",
             )
+            self._set_output_value(self.PIN_O_LIVENESS,
+                                   int(self._get_remanent(self.REM_LIVENESS) or 0))
+            self._set_output_value(self.PIN_O_LAST_PROBE_STATUS_CODE, 0)
         def on_input_value(self, index, value):
             try:
                 if index == self.PIN_I_TRIGGER:
@@ -550,6 +559,10 @@ except NameError:
                     if self._rising_edge(value, self.REM_LAST_CLR_VAL,
                                          self.REM_LAST_CLR_TS_MS):
                         self._handle_clear()
+                elif index == self.PIN_I_PROBE_NOW:
+                    if self._rising_edge(value, self.REM_LAST_PROBE_VAL,
+                                         self.REM_LAST_PROBE_TS_MS):
+                        self._handle_probe()
             except Exception as e:
                 self._fail(0, "internal: " + str(e))
         def _pin_str(self, pin):
@@ -865,6 +878,33 @@ except NameError:
             self._set_output_value(self.PIN_O_LAST_STATUS_CODE, status)
             self._set_output_value(self.PIN_O_LAST_MESSAGE, message)
             self._pulse(self.PIN_O_ERROR_PULSE)
+        def _handle_probe(self):
+            """POST a Resolved for a freshly-generated throwaway id. Airtame
+            accepts the request (proves auth + URL + reachability) but has no
+            matching active alert to resolve, so nothing appears on screens.
+            Probe uses JSON regardless of PAYLOAD_FORMAT because CAP Cancel
+            requires <references> to a real prior alert."""
+            cfg = self._config()
+            (_h, _d, _t, _i, _du,
+             endpoint, api_key, prefix, timeout, retries, _deb,
+             _pf, _sid, _cap) = cfg
+            probe_id = self._next_alert_id(prefix + "-probe")
+            body = self._build_clear_body(probe_id)
+            self.LOGGER.info(0, "[airtame] probe id=" + probe_id
+                             + " key=" + self._mask(api_key))
+            status, resp, err = self._send(body, endpoint, api_key, timeout,
+                                           retries, content_type="application/json")
+            live = 1 if err == "" else 0
+            self._set_remanent(self.REM_LIVENESS, live)
+            self._set_output_value(self.PIN_O_LIVENESS, live)
+            self._set_output_value(self.PIN_O_LAST_PROBE_STATUS_CODE, status)
+            if err == "":
+                self.LOGGER.info(0, "[airtame] probe ok (HTTP %d)" % status)
+            elif err in ("config-endpoint", "config-key"):
+                self.LOGGER.error(0, "[airtame] probe config error: " + err)
+            else:
+                self.LOGGER.error(0, "[airtame] probe failed (HTTP %d %s)"
+                                  % (status, err))
 
 SN[1]=AirtameEmergencyAlert24815((MC, SN, EN, pItem))
 SN[1].FRAMEWORK._run_in_context_thread(SN[1].on_init)

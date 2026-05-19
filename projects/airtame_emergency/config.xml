@@ -19,6 +19,7 @@
                 <input type="STRING" const_name="PAYLOAD_FORMAT"     init_value="json">Payload format: json (Airtame option 2) or cap (Airtame option 1, CAP 1.2 XML)</input>
                 <input type="STRING" const_name="SENDER_ID"          init_value="gira-homeserver">CAP sender id (also used as senderName)</input>
                 <input type="STRING" const_name="CAP_CATEGORY"       init_value="Safety">CAP category: Geo, Met, Safety, Security, Rescue, Fire, Health, Env, Transport, Infra, CBRNE, Other</input>
+                <input type="NUMBER" const_name="PROBE_NOW"          init_value="0">Rising edge sends a safe Resolved probe (no emergency on screens) to verify the webhook + API key</input>
             </inputs>
             <outputs>
                 <output type="NUMBER" const_name="ACTIVE"           init_value="0">1 while the most recent alert has not been resolved</output>
@@ -27,6 +28,8 @@
                 <output type="NUMBER" const_name="LAST_STATUS_CODE" init_value="0">HTTP status of last request (0 on transport error)</output>
                 <output type="STRING" const_name="LAST_MESSAGE"     init_value="">Short human-readable result or error message</output>
                 <output type="STRING" const_name="LAST_ALERT_ID"    init_value="">ID of the most recent initiated alert</output>
+                <output type="NUMBER" const_name="LIVENESS"          init_value="0">1 if the most recent probe got a 2xx response, 0 otherwise. Persists across HS restart.</output>
+                <output type="NUMBER" const_name="LAST_PROBE_STATUS_CODE" init_value="0">HTTP status of the last probe (0 on transport error)</output>
             </outputs>
             <remanent_variables>
                 <remanent_variable type="NUMBER" const_name="ACTIVE"           init_value="0">Active flag (survives HS restart)</remanent_variable>
@@ -37,6 +40,9 @@
                 <remanent_variable type="NUMBER" const_name="LAST_CLR_VAL"     init_value="0">Last seen clear value (edge detect)</remanent_variable>
                 <remanent_variable type="NUMBER" const_name="LAST_CLR_TS_MS"   init_value="0">Last accepted clear edge timestamp (ms)</remanent_variable>
                 <remanent_variable type="STRING" const_name="ACTIVE_SENT_TS"   init_value="">ISO 8601 sent-time of the active alert (CAP &lt;references&gt; needs this)</remanent_variable>
+                <remanent_variable type="NUMBER" const_name="LAST_PROBE_VAL"   init_value="0">Last seen probe value (edge detect)</remanent_variable>
+                <remanent_variable type="NUMBER" const_name="LAST_PROBE_TS_MS" init_value="0">Last accepted probe edge timestamp (ms)</remanent_variable>
+                <remanent_variable type="NUMBER" const_name="LIVENESS"         init_value="0">Liveness flag (survives HS restart)</remanent_variable>
             </remanent_variables>
             <translations>
                 <translation language="en" name="Airtame Emergency Alert" category="Airtame">
@@ -57,6 +63,7 @@
                         <translation_input>Payload format</translation_input>
                         <translation_input>Sender id (CAP)</translation_input>
                         <translation_input>CAP category</translation_input>
+                        <translation_input>Probe now (safe test)</translation_input>
                     </translation_inputs>
                     <translation_outputs>
                         <translation_output>Active</translation_output>
@@ -65,6 +72,8 @@
                         <translation_output>Last status code</translation_output>
                         <translation_output>Last message</translation_output>
                         <translation_output>Last alert id</translation_output>
+                        <translation_output>Liveness</translation_output>
+                        <translation_output>Last probe status code</translation_output>
                     </translation_outputs>
                 </translation>
             </translations>

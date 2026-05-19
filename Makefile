@@ -44,9 +44,13 @@ hslz:
 
 verify: test build
 	@echo
-	@echo "Sanity-checking record 5000 field count (must be 4 + 16 + 1 + 6 + 1 = 28)..."
-	@awk -F'|' 'NR==2{ if (NF==28) { print "  HSL2 record 5000 OK (28 fields)" } \
-	                    else { printf "  HSL2 record 5000 BAD: %d fields (expected 28)\n", NF; exit 1 } }' \
+	@N_IN=$$(grep -c '<input ' projects/airtame_emergency/config.xml); \
+	  N_OUT=$$(grep -c '<output ' projects/airtame_emergency/config.xml); \
+	  EXPECTED=$$(( 4 + $$N_IN + 1 + $$N_OUT + 1 )); \
+	  echo "Sanity-checking record 5000 field count"; \
+	  echo "  expected: 4 + $$N_IN inputs + 1 + $$N_OUT outputs + 1 = $$EXPECTED"; \
+	  awk -F'|' -v want=$$EXPECTED 'NR==2{ if (NF==want) { printf "  HSL2 record 5000 OK (%d fields)\n", NF } \
+	                                        else { printf "  HSL2 record 5000 BAD: %d fields (expected %d)\n", NF, want; exit 1 } }' \
 	    projects/airtame_emergency/release/24815_AirtameEmergencyAlert.hsl
 
 clean:

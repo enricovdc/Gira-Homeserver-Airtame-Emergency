@@ -150,17 +150,19 @@ class LogicModule:
         "trigger", "clear", "headline", "description", "template",
         "is_drill", "duration_seconds", "api_endpoint", "api_key",
         "alert_id_prefix", "timeout_seconds", "max_retries", "debounce_ms",
-        "payload_format", "sender_id", "cap_category",
+        "payload_format", "sender_id", "cap_category", "probe_now",
     )
     STORE_NAMES = (
         "active", "active_alert_id", "counter",
         "last_trig_val", "last_trig_ts_ms",
         "last_clr_val", "last_clr_ts_ms",
         "active_sent_ts",
+        "last_probe_val", "last_probe_ts_ms", "liveness",
     )
     OUTPUT_NAMES = (
         "active", "success_pulse", "error_pulse",
         "last_status_code", "last_message", "last_alert_id",
+        "liveness", "last_probe_status_code",
     )
 
     def __init__(self, hsl3):
@@ -177,7 +179,10 @@ class LogicModule:
         self._last_trig_ts_ms = 0
         self._last_clr_val = 0
         self._last_clr_ts_ms = 0
+        self._last_probe_val = 0
+        self._last_probe_ts_ms = 0
         self._counter = 0
+        self._liveness = 0
         # Active-alert state, also restored from `store`.
         self._active = False
         self._active_alert_id = ""
@@ -262,11 +267,17 @@ class LogicModule:
             self._last_trig_ts_ms = int(self._sv(store, "last_trig_ts_ms") or 0)
             self._last_clr_val = int(self._sv(store, "last_clr_val") or 0)
             self._last_clr_ts_ms = int(self._sv(store, "last_clr_ts_ms") or 0)
+            self._last_probe_val = int(self._sv(store, "last_probe_val") or 0)
+            self._last_probe_ts_ms = int(self._sv(store, "last_probe_ts_ms") or 0)
+            self._liveness = int(self._sv(store, "liveness") or 0)
         except Exception as e:
             self.debug.log("store restore failed: %s" % e)
         # Restore the user-visible outputs to match the persisted state.
         self.fw.run_in_context(self._emit_outputs, (
             1 if self._active else 0, 0, 0, 0, "", self._active_alert_id))
+        # And the probe-liveness output, persisted across HS restart.
+        self.fw.run_in_context(self._set_output, ("liveness", float(self._liveness)))
+        self.fw.run_in_context(self._set_output, ("last_probe_status_code", float(0)))
 
     def on_calc(self, inputs):
         self._snap_from(inputs)
@@ -278,6 +289,10 @@ class LogicModule:
             if self._rising_edge(int(self._snap.get("clear") or 0),
                                  attr="clr"):
                 self._handle_clear()
+        if self._ic(inputs, "probe_now"):
+            if self._rising_edge(int(self._snap.get("probe_now") or 0),
+                                 attr="probe"):
+                self._handle_probe()
 
     def on_timer(self, timer):
         pass
@@ -305,13 +320,20 @@ class LogicModule:
 
     def _rising_edge(self, cur_val, attr):
         cur = 1 if cur_val else 0
-        prev = self._last_trig_val if attr == "trig" else self._last_clr_val
         if attr == "trig":
+            prev = self._last_trig_val
             self._last_trig_val = cur
             store_val_id = "last_trig_val"
             store_ts_id = "last_trig_ts_ms"
             last_ts_attr = "_last_trig_ts_ms"
+        elif attr == "probe":
+            prev = self._last_probe_val
+            self._last_probe_val = cur
+            store_val_id = "last_probe_val"
+            store_ts_id = "last_probe_ts_ms"
+            last_ts_attr = "_last_probe_ts_ms"
         else:
+            prev = self._last_clr_val
             self._last_clr_val = cur
             store_val_id = "last_clr_val"
             store_ts_id = "last_clr_ts_ms"
@@ -561,6 +583,57 @@ class LogicModule:
                                (1 if self._active else 0, 0, 1, status, message,
                                 self._active_alert_id))
         self.fw.run_in_context(self._set_output_single, ("error_pulse", 0))
+
+    # ---- probe (safe webhook + auth check, no emergency on screens) -----
+
+    def _handle_probe(self):
+        """POST a Resolved with a throwaway id. Airtame parses the body
+        and authenticates, then silently accepts (no matching active
+        alert to resolve) so nothing appears on screens. Used to verify
+        that the integration URL + API key are still healthy.
+
+        Probe always uses JSON regardless of payload_format; a CAP Cancel
+        requires <references> to a real prior alert and isn't a clean
+        side-effect-free probe."""
+        endpoint = self._cfg("api_endpoint", "")
+        api_key = self._cfg("api_key", "")
+        prefix = self._cfg("alert_id_prefix", "gira-hs")
+        timeout = int(self._cfg("timeout_seconds", 10) or 10)
+        retries = int(self._cfg("max_retries", 2) or 2)
+        if not endpoint.startswith("https://") or not api_key:
+            self._record_probe(0, "config")
+            return
+        probe_id = self._next_alert_id(prefix + "-probe")
+        body = self._build_clear_body(probe_id)
+        headers = {
+            "Authorization": "Basic " + base64.b64encode(
+                ("gira:" + api_key).encode("utf-8")).decode("ascii"),
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        self.debug.log("probe id=%s key=%s" % (probe_id, self._mask(api_key)))
+        threading.Thread(
+            target=self._do_send_probe,
+            args=(endpoint, headers, body, timeout, retries),
+            daemon=True,
+        ).start()
+
+    def _do_send_probe(self, endpoint, headers, body, timeout, retries):
+        status, _resp, err = self._send_http(endpoint, headers, body,
+                                             timeout, retries)
+        self._record_probe(status, err)
+
+    def _record_probe(self, status, err):
+        live = 1 if err == "" else 0
+        self._liveness = live
+        self.fw.run_in_context(self._persist_store, ("liveness", live))
+        self.fw.run_in_context(self._set_output, ("liveness", float(live)))
+        self.fw.run_in_context(self._set_output,
+                               ("last_probe_status_code", float(status)))
+        if err == "":
+            self.debug.log("probe ok (HTTP %d)" % status)
+        else:
+            self.debug.log("probe failed (HTTP %d %s)" % (status, err))
 
     # ---- output helpers (must run in context thread) --------------------
 

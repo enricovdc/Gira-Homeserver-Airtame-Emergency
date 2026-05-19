@@ -22,7 +22,8 @@
       { "type": "number", "identifier": "debounce_ms",       "init_value": "1000",     "label": "Debounce (ms)" },
       { "type": "string", "identifier": "payload_format",    "init_value": "json",     "label": "Payload format (json / cap)" },
       { "type": "string", "identifier": "sender_id",         "init_value": "gira-homeserver", "label": "CAP sender id" },
-      { "type": "string", "identifier": "cap_category",      "init_value": "Safety",   "label": "CAP category" }
+      { "type": "string", "identifier": "cap_category",      "init_value": "Safety",   "label": "CAP category" },
+      { "type": "number", "identifier": "probe_now",         "init_value": "0",        "label": "Probe now (safe test, no emergency)" }
     ],
     "outputs": [
       { "type": "number", "identifier": "active",            "init_value": "0",        "label": "Active" },
@@ -30,7 +31,9 @@
       { "type": "number", "identifier": "error_pulse",       "init_value": "0",        "label": "Error pulse" },
       { "type": "number", "identifier": "last_status_code",  "init_value": "0",        "label": "Last HTTP status" },
       { "type": "string", "identifier": "last_message",      "init_value": "",         "label": "Last message" },
-      { "type": "string", "identifier": "last_alert_id",     "init_value": "",         "label": "Last alert id" }
+      { "type": "string", "identifier": "last_alert_id",     "init_value": "",         "label": "Last alert id" },
+      { "type": "number", "identifier": "liveness",          "init_value": "0",        "label": "Liveness" },
+      { "type": "number", "identifier": "last_probe_status_code", "init_value": "0",   "label": "Last probe status code" }
     ],
     "stores": [
       { "type": "number", "identifier": "active",           "init_value": "0" },
@@ -40,7 +43,10 @@
       { "type": "number", "identifier": "last_trig_ts_ms",  "init_value": "0" },
       { "type": "number", "identifier": "last_clr_val",     "init_value": "0" },
       { "type": "number", "identifier": "last_clr_ts_ms",   "init_value": "0" },
-      { "type": "string", "identifier": "active_sent_ts",   "init_value": "" }
+      { "type": "string", "identifier": "active_sent_ts",   "init_value": "" },
+      { "type": "number", "identifier": "last_probe_val",   "init_value": "0" },
+      { "type": "number", "identifier": "last_probe_ts_ms", "init_value": "0" },
+      { "type": "number", "identifier": "liveness",         "init_value": "0" }
     ],
     "timers": [],
     "scripts": [
@@ -67,7 +73,8 @@
           { "label": "Entprellung (ms)" },
           { "label": "Payload-Format (json / cap)" },
           { "label": "Sender-ID (CAP)" },
-          { "label": "CAP-Kategorie" }
+          { "label": "CAP-Kategorie" },
+          { "label": "Test jetzt (sicher, kein Notruf)" }
         ],
         "translation_outputs": [
           { "label": "Aktiv" },
@@ -75,7 +82,9 @@
           { "label": "Fehlerimpuls" },
           { "label": "Letzter HTTP-Status" },
           { "label": "Letzte Meldung" },
-          { "label": "Letzte Alarm-ID" }
+          { "label": "Letzte Alarm-ID" },
+          { "label": "Erreichbarkeit" },
+          { "label": "Letzter Test-Status" }
         ]
       }
     ]

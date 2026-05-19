@@ -22,6 +22,8 @@ DEFAULTS = {
     "api_key": "testkey1234567890",
     "alert_id_prefix": "gira-hs",
     "timeout_seconds": 5, "max_retries": 2, "debounce_ms": 0,
+    "payload_format": "json", "sender_id": "gira-homeserver",
+    "cap_category": "Safety", "probe_now": 0,
 }
 
 
@@ -273,6 +275,82 @@ def test_string_inputs_are_decoded_when_framework_returns_bytes():
     body = calls[0]["body"]
     assert "Lockdown" in body
     assert hsl3.outputs["active"] == 1.0
+
+
+# ----- HSL3 probe -------------------------------------------------------
+
+
+def _build_with_probe_threads(monkeypatch, http_responses):
+    """Same as _build but installs the synchronous-thread monkeypatch
+    locally so the test can be standalone (autouse fixture covers fixture
+    tests but inline helpers like this one need explicit setup)."""
+    class _SyncThread:
+        def __init__(self, target=None, args=(), kwargs=None, daemon=None):
+            self._t = target; self._a = args; self._k = kwargs or {}
+        def start(self):
+            self._t(*self._a, **(self._k))
+    monkeypatch.setattr(hsl3mod.threading, "Thread", _SyncThread)
+    return _build(http_responses)
+
+
+def test_probe_sends_resolved_with_throwaway_id_and_lights_liveness():
+    inst, hsl3, inputs, calls = _build([(200, "")])
+    _calc(inst, inputs, {"probe_now": 1})
+
+    # Wire format: Resolved with throwaway id, never Initiated.
+    body = calls[0]["body"]
+    assert body["status"] == "Resolved", "probe must never initiate an alert"
+    assert "-probe-" in body["id"]
+    # Outputs reflect probe success.
+    assert hsl3.outputs["liveness"] == 1.0
+    assert hsl3.outputs["last_probe_status_code"] == 200.0
+    assert hsl3.store["liveness"] == 1.0
+    # Probe does NOT touch the live alert state.
+    assert hsl3.outputs["active"] == 0.0
+
+
+def test_probe_failure_clears_liveness():
+    inst, hsl3, inputs, calls = _build([(401, "bad token")])
+    # Pre-set liveness=1 in the module so the test sees it flip back.
+    inst._liveness = 1
+    _calc(inst, inputs, {"probe_now": 1})
+
+    assert hsl3.outputs["liveness"] == 0.0
+    assert hsl3.outputs["last_probe_status_code"] == 401.0
+    assert hsl3.store["liveness"] == 0.0
+    assert calls[0]["body"]["status"] == "Resolved"
+    assert hsl3.outputs["active"] == 0.0
+
+
+def test_probe_uses_json_even_when_payload_format_is_cap():
+    """Probe always uses JSON regardless of payload_format - CAP Cancel
+    needs <references> to a real prior alert."""
+    hsl3 = stub.Hsl3()
+    inst = hsl3mod.LogicModule(hsl3)
+    inst._send_http = lambda *a, **kw: (200, "", "")
+    inputs = stub.make_inputs(**dict(DEFAULTS, payload_format="cap"))
+    inst.on_init(inputs, stub.make_store())
+    inputs._clear_changed()
+
+    captured = []
+    def fake(url, headers, body, timeout, max_retries):
+        captured.append({"headers": dict(headers), "body": json.loads(body)})
+        return 200, "", ""
+    inst._send_http = fake
+    inputs._set("probe_now", 1, mark_changed=True)
+    inst.on_calc(inputs)
+
+    assert captured[0]["headers"]["Content-Type"] == "application/json"
+    assert captured[0]["body"]["status"] == "Resolved"
+
+
+def test_on_init_restores_liveness_from_store():
+    hsl3 = stub.Hsl3()
+    inst = hsl3mod.LogicModule(hsl3)
+    store = stub.make_store(liveness=1)
+    inst.on_init(stub.make_inputs(**DEFAULTS), store)
+    assert hsl3.outputs["liveness"] == 1.0
+    assert inst._liveness == 1
 
 
 def test_string_stores_are_persisted_as_bytes_not_str():

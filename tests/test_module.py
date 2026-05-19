@@ -23,6 +23,7 @@ VALID_INPUT_DEFAULTS = {
     14: "json",            # PAYLOAD_FORMAT
     15: "gira-homeserver", # SENDER_ID
     16: "Safety",          # CAP_CATEGORY
+    17: 0,                 # PROBE_NOW
 }
 
 
@@ -195,6 +196,63 @@ def test_cap_format_sends_application_xml_and_persists_sent_ts(monkeypatch):
     # ACTIVE_SENT_TS must be persisted so a later CAP Cancel can reference it.
     sent_ts = inst._remanent_values[inst.REM_ACTIVE_SENT_TS]
     assert sent_ts and "+00:00" in sent_ts
+
+
+# ----- HSL2 probe (Resolved with throwaway id, no emergency on screen) ----
+
+def test_probe_sends_resolved_with_throwaway_id_and_lights_liveness(monkeypatch):
+    monkeypatch.setattr(airtame_module.time, "sleep", lambda _: None)
+    inst = airtame_module.AirtameEmergencyAlert24815(homeserver_context=object())
+    inst._input_values.update(VALID_INPUT_DEFAULTS)
+    inst._http_post = FakeHTTP([(200, "")])
+    inst.on_init()
+
+    inst.on_input_value(inst.PIN_I_PROBE_NOW, 1)
+
+    # Wire format: Resolved with id containing "-probe-", and NEVER an Initiated.
+    body = inst._http_post.calls[0]["body"]
+    assert body["status"] == "Resolved", "probe must never initiate an alert"
+    assert "-probe-" in body["id"], "probe id must be distinguishable"
+    # Outputs reflect probe success and persist across restart.
+    assert inst._output_values[inst.PIN_O_LIVENESS] == 1
+    assert inst._output_values[inst.PIN_O_LAST_PROBE_STATUS_CODE] == 200
+    assert inst._remanent_values[inst.REM_LIVENESS] == 1
+    # Probe doesn't touch the live alert state.
+    assert inst._output_values[inst.PIN_O_ACTIVE] == 0
+
+
+def test_probe_failure_clears_liveness_and_does_not_emit_active(monkeypatch):
+    monkeypatch.setattr(airtame_module.time, "sleep", lambda _: None)
+    inst = airtame_module.AirtameEmergencyAlert24815(homeserver_context=object())
+    inst._input_values.update(VALID_INPUT_DEFAULTS)
+    # Pre-seed liveness as 1 so the test sees it flip back to 0.
+    inst._remanent_values[inst.REM_LIVENESS] = 1
+    inst._http_post = FakeHTTP([(401, "bad token")])
+    inst.on_init()
+
+    inst.on_input_value(inst.PIN_I_PROBE_NOW, 1)
+
+    assert inst._output_values[inst.PIN_O_LIVENESS] == 0
+    assert inst._output_values[inst.PIN_O_LAST_PROBE_STATUS_CODE] == 401
+    assert inst._remanent_values[inst.REM_LIVENESS] == 0
+    # Still: probe must not have initiated anything.
+    assert inst._http_post.calls[0]["body"]["status"] == "Resolved"
+    assert inst._output_values[inst.PIN_O_ACTIVE] == 0
+
+
+def test_probe_uses_json_even_when_payload_format_is_cap(monkeypatch):
+    """A probe in CAP mode would need a <references> to a real prior alert
+    and isn't a clean side-effect-free probe. Module forces JSON for probes."""
+    monkeypatch.setattr(airtame_module.time, "sleep", lambda _: None)
+    inst = airtame_module.AirtameEmergencyAlert24815(homeserver_context=object())
+    inst._input_values.update(VALID_INPUT_DEFAULTS)
+    inst._input_values[14] = "cap"
+    inst._http_post = FakeHTTP([(200, "")])
+    inst.on_init()
+
+    inst.on_input_value(inst.PIN_I_PROBE_NOW, 1)
+
+    assert inst._http_post.calls[0]["headers"]["Content-Type"] == "application/json"
 
 
 def test_cap_clear_sends_cancel_xml_with_references(monkeypatch):
