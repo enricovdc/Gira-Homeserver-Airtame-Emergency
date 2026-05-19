@@ -62,9 +62,12 @@ def _xml_escape(s):
 
 def build_cap_alert(alert_id, sender_id, sent_iso, headline, description,
                     template, is_drill, category, expires_iso):
-    """CAP 1.2 Alert. <event> mirrors Airtame's sample shape (short tag from
-    the template), <status> is Actual (CAP 'Test' would be discarded by
-    recipients; drills are JSON-only)."""
+    """CAP 1.2 Alert. Element order inside <info> must match the CAP XSD
+    sequence (Airtame validates strictly): category, event, urgency,
+    severity, certainty, expires, senderName, headline, description,
+    instruction, area. The Airtame published sample includes the optional
+    <instruction/> and <area> elements with empty content; emit them to
+    match the sample exactly."""
     urgency = TEMPLATE_TO_URGENCY.get(template, "Immediate")
     severity = SEVERITY_DRILL if is_drill else SEVERITY_DEFAULT
     event_short = template.capitalize() if template else "Emergency"
@@ -83,10 +86,15 @@ def build_cap_alert(alert_id, sender_id, sent_iso, headline, description,
         '<urgency>' + urgency + '</urgency>'
         '<severity>' + severity + '</severity>'
         '<certainty>Observed</certainty>'
+        '<expires>' + expires_iso + '</expires>'
         '<senderName>' + _xml_escape(sender_id) + '</senderName>'
         '<headline>' + _xml_escape(headline) + '</headline>'
         '<description>' + _xml_escape(description or "") + '</description>'
-        '<expires>' + expires_iso + '</expires>'
+        '<instruction/>'
+        '<area>'
+        '<areaDesc></areaDesc>'
+        '<circle></circle>'
+        '</area>'
         '</info>'
         '</alert>'
     )
@@ -96,7 +104,8 @@ def build_cap_cancel(cancel_id, sender_id, cancel_sent_iso, original_id,
                      original_sent_iso, category, is_drill, template="high"):
     """CAP 1.2 Cancel. Per Airtame's Stop-an-alert sample, the cancel mirrors
     the original alert's urgency/severity/certainty rather than degrading to
-    Past/Unknown/Unknown."""
+    Past/Unknown/Unknown, and includes the same <instruction/> and <area>
+    skeleton."""
     urgency = TEMPLATE_TO_URGENCY.get(template, "Immediate")
     severity = SEVERITY_DRILL if is_drill else SEVERITY_DEFAULT
     references = "%s,%s,%s" % (sender_id, original_id, original_sent_iso)
@@ -119,6 +128,11 @@ def build_cap_cancel(cancel_id, sender_id, cancel_sent_iso, original_id,
         '<senderName>' + _xml_escape(sender_id) + '</senderName>'
         '<headline></headline>'
         '<description></description>'
+        '<instruction/>'
+        '<area>'
+        '<areaDesc></areaDesc>'
+        '<circle></circle>'
+        '</area>'
         '</info>'
         '</alert>'
     )
@@ -567,11 +581,18 @@ class LogicModule:
             self._set_output(identifier, float(value))
 
     def _persist_store(self, identifier, value):
-        self._set_store(identifier, value if isinstance(value, str) else float(value))
+        # set_store requires bytes for string-typed stores (just like
+        # set_output for string outputs). Numbers go through as float.
+        if isinstance(value, bytes):
+            self._set_store(identifier, value)
+        elif isinstance(value, str):
+            self._set_store(identifier, _enc(value))
+        else:
+            self._set_store(identifier, float(value))
 
     def _persist_active(self, active, alert_id):
         self._set_store("active", float(active))
-        self._set_store("active_alert_id", alert_id)
+        self._set_store("active_alert_id", _enc(alert_id))
 
 
 def _enc(s):

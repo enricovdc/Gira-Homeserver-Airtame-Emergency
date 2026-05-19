@@ -289,3 +289,69 @@ def test_hsl3_json_format_still_sends_application_json(sync_threads_hsl3):
     import json as _json
     parsed = _json.loads(call["body"])
     assert parsed["status"] == "Initiated"
+
+
+# ----- CAP XSD element-order compliance (Airtame validates strictly) -----
+
+
+CAP_INFO_ORDER = [
+    "category", "event", "urgency", "severity", "certainty",
+    "expires", "senderName", "headline", "description",
+    "instruction", "area",
+]
+
+
+def _info_child_order(xml_bytes_or_str):
+    root = ET.fromstring(xml_bytes_or_str)
+    info = root.find(CAP_NS + "info")
+    # Strip namespace prefix to compare against the readable list.
+    return [child.tag.split("}", 1)[-1] for child in info]
+
+
+def test_cap_alert_info_children_in_xsd_order(cap):
+    extras = ({"duration_s": 60, "category": "Safety",
+               "expires_iso": "2026-05-18T08:01:00+00:00"}
+              if cap.flavor == "hsl2"
+              else {"category": "Safety",
+                    "expires_iso": "2026-05-18T08:01:00+00:00"})
+    xml = cap.build_alert(
+        alert_id="i", sender_id="s", sent_iso="2026-05-18T08:00:00+00:00",
+        headline="h", description="d", template="high", is_drill=False,
+        **extras)
+    order = _info_child_order(xml)
+    # We emit every documented element from the Airtame sample.
+    assert order == CAP_INFO_ORDER
+
+
+def test_cap_cancel_info_children_in_xsd_order(cap):
+    xml = cap.build_cancel(
+        cancel_id="cancel-1", sender_id="s",
+        cancel_sent_iso="2026-05-18T08:15:00+00:00",
+        original_id="abc-123",
+        original_sent_iso="2026-05-18T08:00:00+00:00",
+        category="Safety", is_drill=False, template="high")
+    order = _info_child_order(xml)
+    # Cancel has no <expires>; rest matches the sample.
+    expected = [e for e in CAP_INFO_ORDER if e != "expires"]
+    assert order == expected
+
+
+def test_cap_alert_includes_instruction_and_area_skeleton(cap):
+    """Airtame's published sample includes <instruction/> and
+    <area><areaDesc/><circle/></area> with empty content. Match that exactly
+    so the message validates against Airtame's XSD."""
+    extras = ({"duration_s": 60, "category": "Safety",
+               "expires_iso": "2026-05-18T08:01:00+00:00"}
+              if cap.flavor == "hsl2"
+              else {"category": "Safety",
+                    "expires_iso": "2026-05-18T08:01:00+00:00"})
+    xml = cap.build_alert(
+        alert_id="i", sender_id="s", sent_iso="2026-05-18T08:00:00+00:00",
+        headline="h", description="d", template="high", is_drill=False,
+        **extras)
+    info = ET.fromstring(xml).find(CAP_NS + "info")
+    assert info.find(CAP_NS + "instruction") is not None
+    area = info.find(CAP_NS + "area")
+    assert area is not None
+    assert area.find(CAP_NS + "areaDesc") is not None
+    assert area.find(CAP_NS + "circle") is not None

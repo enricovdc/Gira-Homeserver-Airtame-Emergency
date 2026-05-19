@@ -273,3 +273,24 @@ def test_string_inputs_are_decoded_when_framework_returns_bytes():
     body = calls[0]["body"]
     assert "Lockdown" in body
     assert hsl3.outputs["active"] == 1.0
+
+
+def test_string_stores_are_persisted_as_bytes_not_str():
+    """Regression: HS3 set_store requires bytes for string-typed stores
+    (mirroring set_output). Persisting active_alert_id and active_sent_ts
+    as str raised `ValueError: Value must be of type bytes` on the real
+    firmware."""
+    hsl3 = stub.Hsl3()
+    inst = hsl3mod.LogicModule(hsl3)
+    inst._send_http = lambda *a, **kw: (200, "", "")
+    inputs = stub.make_inputs(**DEFAULTS)
+    inst.on_init(inputs, stub.make_store())
+    inputs._clear_changed()
+    inputs._set("trigger", 1, mark_changed=True)
+    inst.on_calc(inputs)
+
+    # String-typed stores must land as bytes, numeric stores as float.
+    assert isinstance(hsl3.store["active_alert_id"], bytes)
+    assert isinstance(hsl3.store["active_sent_ts"], bytes)
+    assert isinstance(hsl3.store["active"], float)
+    assert hsl3.store["active"] == 1.0

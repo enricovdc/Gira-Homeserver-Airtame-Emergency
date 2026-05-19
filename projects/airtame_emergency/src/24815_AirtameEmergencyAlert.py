@@ -219,14 +219,13 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
     def _build_cap_alert(self, alert_id, sender_id, sent_iso, headline,
                          description, template, is_drill, duration_s,
                          category, expires_iso):
-        # Airtame's CAP sample maps <event> to the short template-like tag
-        # ("Lockdown" in the example, not the headline). Match that shape.
+        # Element order inside <info> must match the CAP 1.2 XSD sequence
+        # (Airtame validates strictly): category, event, urgency, severity,
+        # certainty, expires, senderName, headline, description,
+        # instruction, area. Airtame's published sample also includes
+        # <instruction/> and an empty <area> block; we emit them to match.
         urgency = self.TEMPLATE_TO_URGENCY.get(template, "Immediate")
         severity = self.SEVERITY_DRILL if is_drill else self.SEVERITY_DEFAULT
-        # Airtame's published sample uses <status>Actual</status> for both
-        # real alerts and (implicitly) drills - the CAP "Test" value means
-        # "transport test, recipients must disregard" so it'd be dropped.
-        # Drills are flagged in JSON via isDrill; in CAP we have no equivalent.
         status = "Actual"
         event_short = template.capitalize() if template else "Emergency"
         return (
@@ -244,10 +243,15 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
             '<urgency>' + urgency + '</urgency>'
             '<severity>' + severity + '</severity>'
             '<certainty>Observed</certainty>'
+            '<expires>' + expires_iso + '</expires>'
             '<senderName>' + self._xml_escape(sender_id) + '</senderName>'
             '<headline>' + self._xml_escape(headline) + '</headline>'
             '<description>' + self._xml_escape(description or "") + '</description>'
-            '<expires>' + expires_iso + '</expires>'
+            '<instruction/>'
+            '<area>'
+            '<areaDesc></areaDesc>'
+            '<circle></circle>'
+            '</area>'
             '</info>'
             '</alert>'
         )
@@ -255,9 +259,6 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
     def _build_cap_cancel(self, cancel_id, sender_id, cancel_sent_iso,
                           original_id, original_sent_iso, category, is_drill,
                           template="high"):
-        # Per Airtame's published Stop-an-alert sample, the Cancel mirrors
-        # the original alert's urgency/severity/certainty rather than
-        # degrading to Past/Unknown/Unknown.
         urgency = self.TEMPLATE_TO_URGENCY.get(template, "Immediate")
         severity = self.SEVERITY_DRILL if is_drill else self.SEVERITY_DEFAULT
         status = "Actual"
@@ -281,6 +282,11 @@ class AirtameEmergencyAlert24815(hsl20_4.BaseModule):
             '<senderName>' + self._xml_escape(sender_id) + '</senderName>'
             '<headline></headline>'
             '<description></description>'
+            '<instruction/>'
+            '<area>'
+            '<areaDesc></areaDesc>'
+            '<circle></circle>'
+            '</area>'
             '</info>'
             '</alert>'
         )
